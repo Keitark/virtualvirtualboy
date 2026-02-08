@@ -24,8 +24,8 @@ namespace {
 
 constexpr auto kFrameTarget = std::chrono::milliseconds(20);  // ~50 FPS for VB content.
 constexpr int kRomReloadFrames = 120;
-constexpr float kDefaultScreenScale = 0.68f;
-constexpr float kDefaultStereoConvergence = 0.016f;
+constexpr float kDefaultScreenScale = 0.62f;
+constexpr float kDefaultStereoConvergence = -0.04f;
 constexpr float kMinScreenScale = 0.20f;
 constexpr float kMaxScreenScale = 1.00f;
 constexpr float kMinStereoConvergence = -0.08f;
@@ -35,6 +35,7 @@ constexpr float kStereoConvergenceStep = 0.004f;
 constexpr char kPresentationSettingsFile[] = "presentation_settings.cfg";
 constexpr int kStandbyFrameWidth = 768;
 constexpr int kStandbyFrameHeight = 384;
+constexpr auto kInfoHintBlinkPeriod = std::chrono::milliseconds(500);
 
 struct PendingRom {
     std::mutex mutex;
@@ -563,13 +564,22 @@ public:
         if (TakePendingRom(pickedRom, pickedName)) {
             if (core_.loadRomFromBytes(pickedRom.data(), pickedRom.size(), pickedName)) {
                 LOGI("ROM loaded from picker: %s", pickedName.c_str());
+                autoPickerLaunchedForMissingRom_ = false;
             } else {
                 LOGE("Picker ROM load failed: %s", core_.lastError().c_str());
             }
             pickerRequested_ = false;
+            if (autoPickerRestoreInfoWindow_) {
+                showInfoWindow_ = true;
+                autoPickerRestoreInfoWindow_ = false;
+            }
         } else if (TakePickerDismissedSignal()) {
             pickerRequested_ = false;
             LOGI("ROM picker dismissed");
+            if (autoPickerRestoreInfoWindow_) {
+                showInfoWindow_ = true;
+                autoPickerRestoreInfoWindow_ = false;
+            }
         }
 
         if (xrState.leftThumbClick && !prevXrLeftThumbClick_) {
@@ -844,7 +854,13 @@ private:
 
     std::vector<std::string> buildInfoLines() const {
         std::vector<std::string> lines;
-        lines.reserve(12);
+        lines.reserve(14);
+        const auto nowTicks = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now().time_since_epoch())
+                                  .count();
+        const bool blinkOn =
+            ((nowTicks / kInfoHintBlinkPeriod.count()) % 2) == 0;
+        lines.emplace_back(blinkOn ? "PUSH RIGHT STICK TO CLOSE" : " ");
         lines.emplace_back("INFO WINDOW");
 
         std::ostringstream fpsText;
@@ -1005,13 +1021,13 @@ private:
             LOGW("ROM not loaded yet. Last error: %s", core_.lastError().c_str());
         }
 
-        if (!pickerRequested_) {
-            requestRomPicker();
+        if (!pickerRequested_ && !autoPickerLaunchedForMissingRom_) {
+            requestRomPicker(true);
         }
     }
 
-    void requestRomPicker() {
-        if (showInfoWindow_) {
+    void requestRomPicker(const bool autoLaunchIfInfoShown = false) {
+        if (showInfoWindow_ && !autoLaunchIfInfoShown) {
             return;
         }
         if (pickerRequested_ || app_ == nullptr || app_->activity == nullptr ||
@@ -1019,11 +1035,21 @@ private:
             return;
         }
 
+        const bool restoreInfoAfterPicker = autoLaunchIfInfoShown && showInfoWindow_;
+        if (restoreInfoAfterPicker) {
+            showInfoWindow_ = false;
+            autoPickerRestoreInfoWindow_ = true;
+        }
+
         JNIEnv* env = nullptr;
         bool attached = false;
         if (app_->activity->vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
             if (app_->activity->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
                 LOGE("Failed to attach JNI thread for ROM picker");
+                if (restoreInfoAfterPicker) {
+                    showInfoWindow_ = true;
+                    autoPickerRestoreInfoWindow_ = false;
+                }
                 return;
             }
             attached = true;
@@ -1031,6 +1057,10 @@ private:
 
         jclass activityClass = env->GetObjectClass(app_->activity->clazz);
         if (activityClass == nullptr) {
+            if (restoreInfoAfterPicker) {
+                showInfoWindow_ = true;
+                autoPickerRestoreInfoWindow_ = false;
+            }
             if (attached) {
                 app_->activity->vm->DetachCurrentThread();
             }
@@ -1038,6 +1068,7 @@ private:
         }
 
         jmethodID openPickerMethod = env->GetMethodID(activityClass, "openRomPicker", "()V");
+        bool pickerLaunched = false;
         if (openPickerMethod != nullptr) {
             env->CallVoidMethod(app_->activity->clazz, openPickerMethod);
             if (env->ExceptionCheck()) {
@@ -1045,8 +1076,16 @@ private:
                 env->ExceptionClear();
             } else {
                 pickerRequested_ = true;
+                pickerLaunched = true;
+                if (autoLaunchIfInfoShown) {
+                    autoPickerLaunchedForMissingRom_ = true;
+                }
                 LOGI("Requested ROM picker");
             }
+        }
+        if (!pickerLaunched && restoreInfoAfterPicker) {
+            showInfoWindow_ = true;
+            autoPickerRestoreInfoWindow_ = false;
         }
         env->DeleteLocalRef(activityClass);
 
@@ -1066,6 +1105,8 @@ private:
     bool resumed_ = false;
     int reloadCounter_ = 0;
     bool pickerRequested_ = false;
+    bool autoPickerLaunchedForMissingRom_ = false;
+    bool autoPickerRestoreInfoWindow_ = false;
     int lastKeyCode_ = -1;
     bool prevXrLeftThumbClick_ = false;
     bool prevXrRightThumbClick_ = false;
