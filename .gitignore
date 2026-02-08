@@ -1,12 +1,19 @@
+# Android/Gradle
 .gradle/
-.idea/
+**/build/
+**/.cxx/
 local.properties
-build/
-app/build/
-app/.cxx/
-.kotlin/
 captures/
+
+# IDE
+.idea/
 *.iml
-*.apk
-*.ap_
-*.keystore
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local diagnostics
+logs/
+*.log

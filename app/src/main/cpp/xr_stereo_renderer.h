@@ -19,12 +19,33 @@
 
 class XrStereoRenderer {
 public:
+    struct ControllerState {
+        bool left = false;
+        bool right = false;
+        bool up = false;
+        bool down = false;
+        bool a = false;
+        bool b = false;
+        bool x = false;
+        bool y = false;
+        bool l = false;
+        bool r = false;
+        bool leftThumbClick = false;
+        bool rightThumbClick = false;
+        bool start = false;
+        bool select = false;
+    };
+
     bool initialize(ANativeActivity* activity);
     void shutdown();
 
     void pollEvents();
     void updateFrame(const uint32_t* pixels, int width, int height);
     bool renderFrame();
+    bool getControllerState(ControllerState& outState) const;
+    void setPresentationConfig(float screenScale, float stereoConvergence);
+    [[nodiscard]] float screenScale() const { return screenScale_; }
+    [[nodiscard]] float stereoConvergence() const { return stereoConvergence_; }
 
     [[nodiscard]] bool initialized() const { return initialized_; }
     [[nodiscard]] bool sessionRunning() const { return sessionRunning_; }
@@ -47,14 +68,23 @@ private:
     bool createSystem();
     bool createEglContext();
     bool createSession();
+    bool createInputActions();
+    bool suggestInteractionBindings();
     bool createReferenceSpace();
     bool createSwapchains();
     bool createGlResources();
     bool beginSession();
     void endSession();
     void destroySwapchains();
+    void destroyInputActions();
+    void syncInput();
 
     bool makeCurrent();
+
+    bool getBooleanActionState(XrAction action, XrPath subactionPath = XR_NULL_PATH) const;
+    float getFloatActionState(XrAction action, XrPath subactionPath = XR_NULL_PATH) const;
+    bool getVector2ActionState(
+        XrAction action, XrVector2f& outValue, XrPath subactionPath = XR_NULL_PATH) const;
 
     ANativeActivity* activity_ = nullptr;
 
@@ -63,6 +93,24 @@ private:
     XrSession session_ = XR_NULL_HANDLE;
     XrSpace appSpace_ = XR_NULL_HANDLE;
     XrSessionState sessionState_ = XR_SESSION_STATE_UNKNOWN;
+    XrActionSet actionSet_ = XR_NULL_HANDLE;
+    XrPath leftHandPath_ = XR_NULL_PATH;
+    XrPath rightHandPath_ = XR_NULL_PATH;
+    XrPath oculusTouchProfilePath_ = XR_NULL_PATH;
+    XrPath khrSimpleProfilePath_ = XR_NULL_PATH;
+
+    XrAction moveAction_ = XR_NULL_HANDLE;
+    XrAction leftSqueezeAction_ = XR_NULL_HANDLE;
+    XrAction rightSqueezeAction_ = XR_NULL_HANDLE;
+    XrAction leftTriggerAction_ = XR_NULL_HANDLE;
+    XrAction rightTriggerAction_ = XR_NULL_HANDLE;
+    XrAction leftThumbClickAction_ = XR_NULL_HANDLE;
+    XrAction rightThumbClickAction_ = XR_NULL_HANDLE;
+    XrAction buttonAAction_ = XR_NULL_HANDLE;
+    XrAction buttonBAction_ = XR_NULL_HANDLE;
+    XrAction buttonXAction_ = XR_NULL_HANDLE;
+    XrAction buttonYAction_ = XR_NULL_HANDLE;
+    XrAction menuAction_ = XR_NULL_HANDLE;
 
     std::vector<XrViewConfigurationView> configViews_;
     std::vector<XrView> views_;
@@ -88,6 +136,9 @@ private:
     bool sideBySideFrame_ = false;
     int frameWidth_ = 0;
     int frameHeight_ = 0;
+    float screenScale_ = 0.68f;
+    float stereoConvergence_ = 0.016f;
+    ControllerState controllerState_{};
 
     std::string lastError_;
 };

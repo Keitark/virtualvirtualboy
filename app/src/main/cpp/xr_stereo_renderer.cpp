@@ -1,5 +1,6 @@
 #include "xr_stereo_renderer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -38,8 +39,15 @@ constexpr char kFragmentShader[] =
     "varying vec2 vUv;\n"
     "void main() {\n"
     "  vec2 uv = vUv * uUvScale + uUvOffset;\n"
-    "  gl_FragColor = texture2D(uTex, uv);\n"
+    "  vec4 c = texture2D(uTex, uv);\n"
+    "  float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "  gl_FragColor = vec4(l, l * 0.08, l * 0.03, 1.0);\n"
     "}\n";
+
+constexpr float kMinScreenScale = 0.20f;
+constexpr float kMaxScreenScale = 1.00f;
+constexpr float kMinStereoConvergence = -0.08f;
+constexpr float kMaxStereoConvergence = 0.08f;
 
 GLuint CompileShader(GLenum type, const char* source) {
     const GLuint shader = glCreateShader(type);
@@ -115,6 +123,12 @@ bool XrStereoRenderer::setErrorMessage(const char* message) {
     lastError_ = message;
     LOGE("%s", lastError_.c_str());
     return false;
+}
+
+void XrStereoRenderer::setPresentationConfig(const float screenScale, const float stereoConvergence) {
+    screenScale_ = std::clamp(screenScale, kMinScreenScale, kMaxScreenScale);
+    stereoConvergence_ =
+        std::clamp(stereoConvergence, kMinStereoConvergence, kMaxStereoConvergence);
 }
 
 bool XrStereoRenderer::makeCurrent() {
@@ -307,6 +321,227 @@ bool XrStereoRenderer::createSession() {
     return true;
 }
 
+bool XrStereoRenderer::createInputActions() {
+    if (instance_ == XR_NULL_HANDLE || session_ == XR_NULL_HANDLE) {
+        return setErrorMessage("OpenXR input setup requires instance and session");
+    }
+
+    if (XR_FAILED(xrStringToPath(instance_, "/user/hand/left", &leftHandPath_)) ||
+        XR_FAILED(xrStringToPath(instance_, "/user/hand/right", &rightHandPath_)) ||
+        XR_FAILED(
+            xrStringToPath(
+                instance_, "/interaction_profiles/oculus/touch_controller", &oculusTouchProfilePath_)) ||
+        XR_FAILED(
+            xrStringToPath(
+                instance_, "/interaction_profiles/khr/simple_controller", &khrSimpleProfilePath_))) {
+        return setErrorMessage("xrStringToPath failed while initializing controller paths");
+    }
+
+    XrActionSetCreateInfo actionSetInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
+    std::snprintf(actionSetInfo.actionSetName, XR_MAX_ACTION_SET_NAME_SIZE, "gameplay");
+    std::snprintf(actionSetInfo.localizedActionSetName, XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE, "Gameplay");
+    actionSetInfo.priority = 0;
+    XrResult result = xrCreateActionSet(instance_, &actionSetInfo, &actionSet_);
+    if (XR_FAILED(result)) {
+        return setError("xrCreateActionSet", result);
+    }
+
+    const XrPath bothHands[] = {leftHandPath_, rightHandPath_};
+    const XrPath leftHand[] = {leftHandPath_};
+    const XrPath rightHand[] = {rightHandPath_};
+
+    auto createAction = [this](
+                            XrActionType type,
+                            const char* actionName,
+                            const char* localizedName,
+                            const XrPath* subactionPaths,
+                            uint32_t subactionPathCount,
+                            XrAction& outAction) -> bool {
+        XrActionCreateInfo actionInfo{XR_TYPE_ACTION_CREATE_INFO};
+        actionInfo.actionType = type;
+        std::snprintf(actionInfo.actionName, XR_MAX_ACTION_NAME_SIZE, "%s", actionName);
+        std::snprintf(
+            actionInfo.localizedActionName, XR_MAX_LOCALIZED_ACTION_NAME_SIZE, "%s", localizedName);
+        actionInfo.countSubactionPaths = subactionPathCount;
+        actionInfo.subactionPaths = subactionPaths;
+        const XrResult create = xrCreateAction(actionSet_, &actionInfo, &outAction);
+        if (XR_FAILED(create)) {
+            return setError("xrCreateAction", create);
+        }
+        return true;
+    };
+
+    if (!createAction(
+            XR_ACTION_TYPE_VECTOR2F_INPUT,
+            "move",
+            "Move",
+            bothHands,
+            2,
+            moveAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_FLOAT_INPUT,
+            "left_squeeze",
+            "Left Squeeze",
+            leftHand,
+            1,
+            leftSqueezeAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_FLOAT_INPUT,
+            "right_squeeze",
+            "Right Squeeze",
+            rightHand,
+            1,
+            rightSqueezeAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_FLOAT_INPUT,
+            "left_trigger",
+            "Left Trigger",
+            leftHand,
+            1,
+            leftTriggerAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_FLOAT_INPUT,
+            "right_trigger",
+            "Right Trigger",
+            rightHand,
+            1,
+            rightTriggerAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "left_thumb_click",
+            "Left Thumb Click",
+            leftHand,
+            1,
+            leftThumbClickAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "right_thumb_click",
+            "Right Thumb Click",
+            rightHand,
+            1,
+            rightThumbClickAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "button_a",
+            "Button A",
+            rightHand,
+            1,
+            buttonAAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "button_b",
+            "Button B",
+            rightHand,
+            1,
+            buttonBAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "button_x",
+            "Button X",
+            leftHand,
+            1,
+            buttonXAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "button_y",
+            "Button Y",
+            leftHand,
+            1,
+            buttonYAction_) ||
+        !createAction(
+            XR_ACTION_TYPE_BOOLEAN_INPUT,
+            "button_menu",
+            "Button Menu",
+            leftHand,
+            1,
+            menuAction_)) {
+        return false;
+    }
+
+    if (!suggestInteractionBindings()) {
+        return false;
+    }
+
+    XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    attachInfo.countActionSets = 1;
+    attachInfo.actionSets = &actionSet_;
+    result = xrAttachSessionActionSets(session_, &attachInfo);
+    if (XR_FAILED(result)) {
+        return setError("xrAttachSessionActionSets", result);
+    }
+
+    return true;
+}
+
+bool XrStereoRenderer::suggestInteractionBindings() {
+    struct BindingCandidate {
+        XrAction action;
+        const char* path;
+    };
+
+    const BindingCandidate candidates[] = {
+        {moveAction_, "/user/hand/left/input/thumbstick"},
+        {moveAction_, "/user/hand/right/input/thumbstick"},
+        {leftSqueezeAction_, "/user/hand/left/input/squeeze/value"},
+        {rightSqueezeAction_, "/user/hand/right/input/squeeze/value"},
+        {leftTriggerAction_, "/user/hand/left/input/trigger/value"},
+        {rightTriggerAction_, "/user/hand/right/input/trigger/value"},
+        {leftThumbClickAction_, "/user/hand/left/input/thumbstick/click"},
+        {rightThumbClickAction_, "/user/hand/right/input/thumbstick/click"},
+        {buttonAAction_, "/user/hand/right/input/a/click"},
+        {buttonBAction_, "/user/hand/right/input/b/click"},
+        {buttonXAction_, "/user/hand/left/input/x/click"},
+        {buttonYAction_, "/user/hand/left/input/y/click"},
+        {menuAction_, "/user/hand/left/input/menu/click"},
+    };
+
+    std::vector<XrActionSuggestedBinding> acceptedBindings;
+    acceptedBindings.reserve(sizeof(candidates) / sizeof(candidates[0]));
+
+    for (const auto& candidate : candidates) {
+        XrPath path = XR_NULL_PATH;
+        if (XR_FAILED(xrStringToPath(instance_, candidate.path, &path))) {
+            LOGW("OpenXR path rejected by runtime: %s", candidate.path);
+            continue;
+        }
+
+        const XrActionSuggestedBinding oneBinding[] = {{candidate.action, path}};
+        XrInteractionProfileSuggestedBinding oneSuggest{
+            XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        oneSuggest.interactionProfile = oculusTouchProfilePath_;
+        oneSuggest.countSuggestedBindings = 1;
+        oneSuggest.suggestedBindings = oneBinding;
+
+        const XrResult testResult = xrSuggestInteractionProfileBindings(instance_, &oneSuggest);
+        if (XR_FAILED(testResult)) {
+            LOGW(
+                "OpenXR binding rejected: %s (XrResult=%d)",
+                candidate.path,
+                static_cast<int>(testResult));
+            continue;
+        }
+
+        acceptedBindings.push_back({candidate.action, path});
+    }
+
+    if (acceptedBindings.empty()) {
+        return setErrorMessage("No usable OpenXR controller bindings accepted");
+    }
+
+    XrInteractionProfileSuggestedBinding suggested{
+        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    suggested.interactionProfile = oculusTouchProfilePath_;
+    suggested.countSuggestedBindings = static_cast<uint32_t>(acceptedBindings.size());
+    suggested.suggestedBindings = acceptedBindings.data();
+
+    const XrResult finalResult = xrSuggestInteractionProfileBindings(instance_, &suggested);
+    if (XR_FAILED(finalResult)) {
+        return setError("xrSuggestInteractionProfileBindings(final)", finalResult);
+    }
+
+    return true;
+}
+
 bool XrStereoRenderer::createReferenceSpace() {
     XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
@@ -431,6 +666,177 @@ bool XrStereoRenderer::createGlResources() {
     return true;
 }
 
+bool XrStereoRenderer::getBooleanActionState(XrAction action, XrPath subactionPath) const {
+    if (session_ == XR_NULL_HANDLE || action == XR_NULL_HANDLE) {
+        return false;
+    }
+    XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+    getInfo.action = action;
+    getInfo.subactionPath = subactionPath;
+    XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
+    const XrResult result = xrGetActionStateBoolean(session_, &getInfo, &state);
+    if (XR_FAILED(result)) {
+        return false;
+    }
+    return state.isActive && state.currentState;
+}
+
+float XrStereoRenderer::getFloatActionState(XrAction action, XrPath subactionPath) const {
+    if (session_ == XR_NULL_HANDLE || action == XR_NULL_HANDLE) {
+        return 0.0f;
+    }
+    XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+    getInfo.action = action;
+    getInfo.subactionPath = subactionPath;
+    XrActionStateFloat state{XR_TYPE_ACTION_STATE_FLOAT};
+    const XrResult result = xrGetActionStateFloat(session_, &getInfo, &state);
+    if (XR_FAILED(result) || !state.isActive) {
+        return 0.0f;
+    }
+    return state.currentState;
+}
+
+bool XrStereoRenderer::getVector2ActionState(
+    XrAction action, XrVector2f& outValue, XrPath subactionPath) const {
+    outValue = {0.0f, 0.0f};
+    if (session_ == XR_NULL_HANDLE || action == XR_NULL_HANDLE) {
+        return false;
+    }
+    XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+    getInfo.action = action;
+    getInfo.subactionPath = subactionPath;
+    XrActionStateVector2f state{XR_TYPE_ACTION_STATE_VECTOR2F};
+    const XrResult result = xrGetActionStateVector2f(session_, &getInfo, &state);
+    if (XR_FAILED(result) || !state.isActive) {
+        return false;
+    }
+    outValue = state.currentState;
+    return true;
+}
+
+void XrStereoRenderer::syncInput() {
+    if (!sessionRunning_ || session_ == XR_NULL_HANDLE || actionSet_ == XR_NULL_HANDLE) {
+        controllerState_ = ControllerState{};
+        return;
+    }
+
+    XrActiveActionSet activeSet{};
+    activeSet.actionSet = actionSet_;
+    activeSet.subactionPath = XR_NULL_PATH;
+
+    XrActionsSyncInfo syncInfo{XR_TYPE_ACTIONS_SYNC_INFO};
+    syncInfo.countActiveActionSets = 1;
+    syncInfo.activeActionSets = &activeSet;
+    const XrResult syncResult = xrSyncActions(session_, &syncInfo);
+    if (XR_FAILED(syncResult)) {
+        controllerState_ = ControllerState{};
+        return;
+    }
+
+    constexpr float kDeadzone = 0.35f;
+    constexpr float kTriggerPressThreshold = 0.45f;
+
+    XrVector2f leftStick{};
+    XrVector2f rightStick{};
+    const bool leftActive = getVector2ActionState(moveAction_, leftStick, leftHandPath_);
+    const bool rightActive = getVector2ActionState(moveAction_, rightStick, rightHandPath_);
+    XrVector2f move = leftActive ? leftStick : rightStick;
+    if (leftActive && rightActive) {
+        if ((rightStick.x * rightStick.x + rightStick.y * rightStick.y) >
+            (leftStick.x * leftStick.x + leftStick.y * leftStick.y)) {
+            move = rightStick;
+        }
+    }
+
+    controllerState_.left = move.x < -kDeadzone;
+    controllerState_.right = move.x > kDeadzone;
+    controllerState_.up = move.y < -kDeadzone;
+    controllerState_.down = move.y > kDeadzone;
+
+    controllerState_.a = getBooleanActionState(buttonAAction_);
+    controllerState_.b = getBooleanActionState(buttonBAction_);
+    controllerState_.x = getBooleanActionState(buttonXAction_);
+    controllerState_.y = getBooleanActionState(buttonYAction_);
+
+    const float leftTrigger = getFloatActionState(leftTriggerAction_, leftHandPath_);
+    const float leftSqueeze = getFloatActionState(leftSqueezeAction_, leftHandPath_);
+    const float rightTrigger = getFloatActionState(rightTriggerAction_, rightHandPath_);
+    const float rightSqueeze = getFloatActionState(rightSqueezeAction_, rightHandPath_);
+    const float leftPress = leftTrigger > leftSqueeze ? leftTrigger : leftSqueeze;
+    const float rightPress = rightTrigger > rightSqueeze ? rightTrigger : rightSqueeze;
+    controllerState_.l = leftPress > kTriggerPressThreshold;
+    controllerState_.r = rightPress > kTriggerPressThreshold;
+
+    const bool leftThumbClick = getBooleanActionState(leftThumbClickAction_, leftHandPath_);
+    const bool rightThumbClick = getBooleanActionState(rightThumbClickAction_, rightHandPath_);
+    const bool menuClick = getBooleanActionState(menuAction_, leftHandPath_);
+
+    controllerState_.leftThumbClick = leftThumbClick;
+    controllerState_.rightThumbClick = rightThumbClick;
+    controllerState_.start = controllerState_.y || menuClick;
+    controllerState_.select = controllerState_.x;
+}
+
+void XrStereoRenderer::destroyInputActions() {
+    if (buttonAAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(buttonAAction_);
+        buttonAAction_ = XR_NULL_HANDLE;
+    }
+    if (buttonBAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(buttonBAction_);
+        buttonBAction_ = XR_NULL_HANDLE;
+    }
+    if (buttonXAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(buttonXAction_);
+        buttonXAction_ = XR_NULL_HANDLE;
+    }
+    if (buttonYAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(buttonYAction_);
+        buttonYAction_ = XR_NULL_HANDLE;
+    }
+    if (menuAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(menuAction_);
+        menuAction_ = XR_NULL_HANDLE;
+    }
+    if (leftThumbClickAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(leftThumbClickAction_);
+        leftThumbClickAction_ = XR_NULL_HANDLE;
+    }
+    if (rightThumbClickAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(rightThumbClickAction_);
+        rightThumbClickAction_ = XR_NULL_HANDLE;
+    }
+    if (leftTriggerAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(leftTriggerAction_);
+        leftTriggerAction_ = XR_NULL_HANDLE;
+    }
+    if (rightTriggerAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(rightTriggerAction_);
+        rightTriggerAction_ = XR_NULL_HANDLE;
+    }
+    if (leftSqueezeAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(leftSqueezeAction_);
+        leftSqueezeAction_ = XR_NULL_HANDLE;
+    }
+    if (rightSqueezeAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(rightSqueezeAction_);
+        rightSqueezeAction_ = XR_NULL_HANDLE;
+    }
+    if (moveAction_ != XR_NULL_HANDLE) {
+        xrDestroyAction(moveAction_);
+        moveAction_ = XR_NULL_HANDLE;
+    }
+    if (actionSet_ != XR_NULL_HANDLE) {
+        xrDestroyActionSet(actionSet_);
+        actionSet_ = XR_NULL_HANDLE;
+    }
+    leftHandPath_ = XR_NULL_PATH;
+    rightHandPath_ = XR_NULL_PATH;
+    oculusTouchProfilePath_ = XR_NULL_PATH;
+    khrSimpleProfilePath_ = XR_NULL_PATH;
+    controllerState_ = ControllerState{};
+}
+
 bool XrStereoRenderer::beginSession() {
     XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
     beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -469,7 +875,7 @@ bool XrStereoRenderer::initialize(ANativeActivity* activity) {
     }
 
     if (!initializeLoader() || !createInstance() || !createSystem() || !createEglContext() ||
-        !createSession() || !createReferenceSpace() || !createSwapchains() ||
+        !createSession() || !createInputActions() || !createReferenceSpace() || !createSwapchains() ||
         !createGlResources()) {
         shutdown();
         return false;
@@ -510,6 +916,8 @@ void XrStereoRenderer::pollEvents() {
         }
         eventBuffer = XrEventDataBuffer{XR_TYPE_EVENT_DATA_BUFFER};
     }
+
+    syncInput();
 }
 
 void XrStereoRenderer::updateFrame(const uint32_t* pixels, int width, int height) {
@@ -577,11 +985,14 @@ bool XrStereoRenderer::renderFrame() {
         if (viewCount > 0) {
             projectionViews.resize(viewCount, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW});
 
-            constexpr GLfloat vertices[] = {
-                -1.0f, -1.0f, 0.0f, 1.0f,
-                1.0f,  -1.0f, 1.0f, 1.0f,
-                -1.0f, 1.0f,  0.0f, 0.0f,
-                1.0f,  1.0f,  1.0f, 0.0f,
+            const float screenScale = std::clamp(screenScale_, kMinScreenScale, kMaxScreenScale);
+            const float stereoConvergence =
+                std::clamp(stereoConvergence_, kMinStereoConvergence, kMaxStereoConvergence);
+            const GLfloat vertices[] = {
+                -screenScale, -screenScale, 0.0f, 1.0f,
+                screenScale,  -screenScale, 1.0f, 1.0f,
+                -screenScale, screenScale,  0.0f, 0.0f,
+                screenScale,  screenScale,  1.0f, 0.0f,
             };
 
             for (uint32_t i = 0; i < viewCount && i < eyeSwapchains_.size(); ++i) {
@@ -623,8 +1034,10 @@ bool XrStereoRenderer::renderFrame() {
                         glUniform1i(uniformTexture_, 0);
 
                         if (sideBySideFrame_) {
+                            const float leftOffset = stereoConvergence;
+                            const float rightOffset = 0.5f - stereoConvergence;
                             glUniform2f(uniformUvScale_, 0.5f, 1.0f);
-                            glUniform2f(uniformUvOffset_, i == 0 ? 0.0f : 0.5f, 0.0f);
+                            glUniform2f(uniformUvOffset_, i == 0 ? leftOffset : rightOffset, 0.0f);
                         } else {
                             glUniform2f(uniformUvScale_, 1.0f, 1.0f);
                             glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
@@ -691,6 +1104,8 @@ void XrStereoRenderer::shutdown() {
         endSession();
     }
 
+    destroyInputActions();
+
     if (framebuffer_ != 0) {
         glDeleteFramebuffers(1, &framebuffer_);
         framebuffer_ = 0;
@@ -746,4 +1161,14 @@ void XrStereoRenderer::shutdown() {
     exitRequested_ = false;
     frameWidth_ = 0;
     frameHeight_ = 0;
+    controllerState_ = ControllerState{};
+}
+
+bool XrStereoRenderer::getControllerState(ControllerState& outState) const {
+    if (!initialized_) {
+        outState = ControllerState{};
+        return false;
+    }
+    outState = controllerState_;
+    return true;
 }

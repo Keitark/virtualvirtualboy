@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,7 @@ public:
     void shutdown();
 
     bool loadRomFromFile(const std::string& path);
+    bool loadRomFromBytes(const uint8_t* data, size_t size, const std::string& nameHint);
     void unloadRom();
 
     void setInputState(const VbInputState& inputState);
@@ -35,10 +38,14 @@ public:
     [[nodiscard]] int frameWidth() const { return frameWidth_; }
     [[nodiscard]] int frameHeight() const { return frameHeight_; }
     [[nodiscard]] const std::vector<uint32_t>& framePixels() const { return frameBuffer_; }
+    [[nodiscard]] const std::string& romLabel() const { return romPathLabel_; }
     [[nodiscard]] std::string lastError() const { return lastError_; }
     [[nodiscard]] uint16_t inputMask() const { return inputMask_; }
+    [[nodiscard]] int audioSampleRate() const { return audioSampleRate_; }
 
     void onVideoFrame(const void* data, unsigned width, unsigned height, size_t pitch);
+    void onAudioBatch(const int16_t* interleavedSamples, size_t frames);
+    size_t drainAudioFrames(int16_t* outInterleavedSamples, size_t maxFrames);
 
 private:
     static unsigned mapInputToBitmask(const VbInputState& inputState);
@@ -49,8 +56,12 @@ private:
     bool frameReady_ = false;
     int frameWidth_ = 0;
     int frameHeight_ = 0;
+    int audioSampleRate_ = 44100;
     uint16_t inputMask_ = 0;
+    std::string romPathLabel_ = "memory.vb";
     std::vector<uint8_t> romData_;
     std::vector<uint32_t> frameBuffer_;
+    std::deque<int16_t> audioQueue_;
+    std::mutex audioMutex_;
     std::string lastError_;
 };

@@ -23,6 +23,7 @@ void retro_set_input_poll(retro_input_poll_t cb);
 void retro_set_input_state(retro_input_state_t cb);
 void retro_init(void);
 void retro_deinit(void);
+void retro_get_system_av_info(struct retro_system_av_info* info);
 bool retro_load_game(const struct retro_game_info* info);
 void retro_unload_game(void);
 void retro_run(void);
@@ -74,6 +75,10 @@ bool EnvironmentCallback(unsigned cmd, void* data) {
                     var->value = "side-by-side";
                     return true;
                 }
+                if (std::strcmp(var->key, "vb_color_mode") == 0) {
+                    var->value = "black & red";
+                    return true;
+                }
                 if (std::strcmp(var->key, "vb_cpu_emulation") == 0) {
                     var->value = "fast";
                     return true;
@@ -102,12 +107,17 @@ void VideoRefreshCallback(const void* data, unsigned width, unsigned height, siz
 }
 
 void AudioSampleCallback(int16_t left, int16_t right) {
-    (void)left;
-    (void)right;
+    if (gCore == nullptr) {
+        return;
+    }
+    int16_t pair[2] = {left, right};
+    gCore->onAudioBatch(pair, 1);
 }
 
 size_t AudioSampleBatchCallback(const int16_t* data, size_t frames) {
-    (void)data;
+    if (gCore != nullptr && data != nullptr && frames > 0) {
+        gCore->onAudioBatch(data, frames);
+    }
     return frames;
 }
 
@@ -173,28 +183,59 @@ bool LibretroVbCore::loadRomFromFile(const std::string& path) {
         return false;
     }
 
-    romData_.resize(romSize);
-    rom.read(reinterpret_cast<char*>(romData_.data()), static_cast<std::streamsize>(romData_.size()));
+    std::vector<uint8_t> fileData(romSize);
+    rom.read(reinterpret_cast<char*>(fileData.data()), static_cast<std::streamsize>(fileData.size()));
     if (!rom.good() && !rom.eof()) {
         setError("Failed reading ROM data: " + path);
         return false;
     }
 
+    return loadRomFromBytes(fileData.data(), fileData.size(), path);
+}
+
+bool LibretroVbCore::loadRomFromBytes(
+    const uint8_t* data, const size_t size, const std::string& nameHint) {
+    if (!initialized_) {
+        setError("libretro core not initialized");
+        return false;
+    }
+    if (data == nullptr || size == 0) {
+        setError("Invalid ROM payload");
+        return false;
+    }
+
+    unloadRom();
+    frameReady_ = false;
+    romData_.assign(data, data + size);
+    romPathLabel_ = nameHint.empty() ? "memory.vb" : nameHint;
+
     retro_game_info info{};
-    info.path = path.c_str();
+    info.path = romPathLabel_.c_str();
     info.data = romData_.data();
     info.size = romData_.size();
     info.meta = nullptr;
 
     if (!retro_load_game(&info)) {
-        setError("retro_load_game failed: " + path);
+        setError("retro_load_game failed: " + romPathLabel_);
         romData_.clear();
         return false;
     }
 
+    retro_system_av_info avInfo{};
+    retro_get_system_av_info(&avInfo);
+    if (avInfo.timing.sample_rate > 0.0) {
+        audioSampleRate_ = static_cast<int>(avInfo.timing.sample_rate + 0.5);
+    } else {
+        audioSampleRate_ = 44100;
+    }
+
     romLoaded_ = true;
     lastError_.clear();
-    LOGI("ROM loaded: %s", path.c_str());
+    LOGI(
+        "ROM loaded: %s (%zu bytes, %d Hz)",
+        romPathLabel_.c_str(),
+        romData_.size(),
+        audioSampleRate_);
     return true;
 }
 
@@ -208,6 +249,8 @@ void LibretroVbCore::unloadRom() {
     frameHeight_ = 0;
     frameBuffer_.clear();
     romData_.clear();
+    std::scoped_lock lock(audioMutex_);
+    audioQueue_.clear();
 }
 
 unsigned LibretroVbCore::mapInputToBitmask(const VbInputState& inputState) {
@@ -261,6 +304,40 @@ void LibretroVbCore::onVideoFrame(const void* data, unsigned width, unsigned hei
         const auto* srcRow = reinterpret_cast<const uint32_t*>(src + (y * pitch));
         std::memcpy(dstRow, srcRow, width * sizeof(uint32_t));
     }
+}
+
+void LibretroVbCore::onAudioBatch(const int16_t* interleavedSamples, const size_t frames) {
+    if (interleavedSamples == nullptr || frames == 0) {
+        return;
+    }
+
+    constexpr size_t kMaxQueuedSamples = 192000;  // 2s of stereo at 48kHz.
+    const size_t sampleCount = frames * 2;
+    std::scoped_lock lock(audioMutex_);
+    for (size_t i = 0; i < sampleCount; ++i) {
+        audioQueue_.push_back(interleavedSamples[i]);
+    }
+
+    while (audioQueue_.size() > kMaxQueuedSamples) {
+        audioQueue_.pop_front();
+    }
+}
+
+size_t LibretroVbCore::drainAudioFrames(int16_t* outInterleavedSamples, const size_t maxFrames) {
+    if (outInterleavedSamples == nullptr || maxFrames == 0) {
+        return 0;
+    }
+
+    std::scoped_lock lock(audioMutex_);
+    const size_t availableFrames = audioQueue_.size() / 2;
+    const size_t framesToDrain = availableFrames < maxFrames ? availableFrames : maxFrames;
+
+    for (size_t i = 0; i < framesToDrain * 2; ++i) {
+        outInterleavedSamples[i] = audioQueue_.front();
+        audioQueue_.pop_front();
+    }
+
+    return framesToDrain;
 }
 
 void LibretroVbCore::runFrame() {
