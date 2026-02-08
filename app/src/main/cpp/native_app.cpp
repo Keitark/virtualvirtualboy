@@ -522,8 +522,8 @@ public:
 
             stickLeft_ = stickX < -kStickDeadzone || hatX < -kHatThreshold;
             stickRight_ = stickX > kStickDeadzone || hatX > kHatThreshold;
-            stickUp_ = stickY < -kStickDeadzone || hatY < -kHatThreshold;
-            stickDown_ = stickY > kStickDeadzone || hatY > kHatThreshold;
+            stickUp_ = stickY > kStickDeadzone || hatY > kHatThreshold;
+            stickDown_ = stickY < -kStickDeadzone || hatY < -kHatThreshold;
             triggerAxisL_ = lTrigger > kTriggerThreshold;
             triggerAxisR_ = rTrigger > kTriggerThreshold;
 
