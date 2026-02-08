@@ -1,41 +1,55 @@
 # virtualvirtualboy
 
-Virtual Boy emulator for Meta Quest (Quest 2+), built as a native Android/OpenXR app.
+[![Status](https://img.shields.io/badge/status-beta-orange?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
+[![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
+[![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
+[![License](https://img.shields.io/badge/license-GPL--2.0-blue?style=for-the-badge)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/Keitark/virtualvirtualboy?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/commits/main)
 
-Current milestone: `0.1.0-beta.1`.
+Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
-## Features
-- Beetle VB (`mednafen`) libretro core integrated in-app.
-- OpenXR stereo rendering path for Quest, with GLES fallback renderer.
-- Red palette output (`black & red`) and side-by-side eye rendering.
-- Audio output via `AAudio`.
-- ROM loading:
-  - Android SAF picker (arbitrary filename support).
-  - Fallback scan: `/sdcard/Download/test.vb`, `/sdcard/Download/test.vboy`, `/sdcard/Download/rom.vb`.
-- In-app info window and live stereo calibration:
-  - Screen size and stereo convergence tuning.
-  - Settings persisted across launches.
+Current milestone: `v0.1.0-beta.1`
 
-## Build
-Requirements:
+---
+
+## English
+
+### Highlights
+- Real VB emulation core: Beetle VB (`mednafen`/libretro).
+- OpenXR stereo renderer for Quest (with GLES fallback).
+- Red palette rendering (`black & red`) + side-by-side stereo path.
+- AAudio output.
+- ROM picker (SAF) with arbitrary filenames.
+- Runtime calibration (screen size / stereo convergence) with persistence.
+
+### Build Requirements
 - JDK 17
-- Android SDK platform 35
+- Android SDK Platform 35
 - NDK `26.1.10909125`
 - CMake `3.22.1`
 
-Build debug APK:
+### Build Commands
 ```bash
 ./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
-## Install on Quest
+### APK Output Naming
+APK files are now generated with explicit names:
+- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
+- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+
+Example (`v0.1.0-beta.1`):
+- `virtualvirtualboy-0.1.0-beta.1-debug.apk`
+
+### Install / Run on Quest
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
 adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 
-## Controls (Quest)
+### Controls (Quest)
 - `A/B`: VB `A/B`
 - `Y`: Start
 - `X`: Select
@@ -44,19 +58,93 @@ adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 - `R3`: toggle info window
 - `L3`: open ROM picker (only when info window is hidden)
 
-Calibration (when info window is shown):
-- Hold `L + R`, then:
-  - `Up/Down`: screen size
-  - `Left/Right`: stereo convergence
-  - `A`: reset defaults
+Calibration (while info window is shown):
+- Hold `L + R`
+- `Up/Down`: screen size
+- `Left/Right`: stereo convergence
+- `A`: reset defaults
 
-## Repository Layout
+### Project Layout
 - `app/src/main/java/.../MainActivity.kt`: Android activity + picker bridge.
-- `app/src/main/cpp/native_app.cpp`: native app loop, input mapping, overlay, calibration.
-- `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR session, swapchains, XR input.
-- `app/src/main/cpp/libretro_vb_core.*`: libretro core bridge.
-- `third_party/beetle-vb-libretro/`: embedded core source.
+- `app/src/main/cpp/native_app.cpp`: native loop, lifecycle, input, overlay, calibration.
+- `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR stereo renderer + XR input actions.
+- `app/src/main/cpp/libretro_vb_core.*`: libretro bridge (video/audio/input).
+- `third_party/beetle-vb-libretro/`: bundled core source.
+
+### Roadmap
+- Save states + per-ROM config.
+- CI for debug build and checks.
+- Release build hardening and distribution workflow.
+
+---
+
+## 日本語
+
+### 概要
+`virtualvirtualboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
+Android ネイティブ + OpenXR で実装しています。
+
+現在のマイルストーン: `v0.1.0-beta.1`
+
+### 主な機能
+- Beetle VB（`mednafen` / libretro）コアを統合。
+- Quest 向け OpenXR ステレオ描画（GLES フォールバックあり）。
+- 赤色パレット（`black & red`）表示。
+- AAudio による音声出力。
+- SAF による ROM ピッカー（任意ファイル名対応）。
+- 画面サイズ / 立体収束（convergence）のランタイム調整と保存。
+
+### ビルド要件
+- JDK 17
+- Android SDK Platform 35
+- NDK `26.1.10909125`
+- CMake `3.22.1`
+
+### ビルドコマンド
+```bash
+./gradlew assembleDebug
+./gradlew assembleRelease
+```
+
+### APK 名称
+出力 APK 名を分かりやすくしています:
+- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
+- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+
+例（`v0.1.0-beta.1`）:
+- `virtualvirtualboy-0.1.0-beta.1-debug.apk`
+
+### Quest へのインストール
+```bash
+adb devices
+adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
+adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
+```
+
+### 操作（Quest）
+- `A/B`: VB の `A/B`
+- `Y`: Start
+- `X`: Select
+- `L1/R1`（+トリガー）: VB の `L/R`
+- 左スティック / D-pad: 移動
+- `R3`: 情報ウィンドウ表示切替
+- `L3`: ROM ピッカー起動（情報ウィンドウ非表示時のみ）
+
+情報ウィンドウ表示中の調整:
+- `L + R` を押しながら
+- `Up/Down`: 画面サイズ
+- `Left/Right`: 立体収束量
+- `A`: 初期値へ戻す
+
+### ディレクトリ構成
+- `app/src/main/java/.../MainActivity.kt`: Activity と ROM ピッカー連携。
+- `app/src/main/cpp/native_app.cpp`: ネイティブループ、入力、HUD、調整処理。
+- `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR 描画と XR 入力。
+- `app/src/main/cpp/libretro_vb_core.*`: libretro ブリッジ。
+- `third_party/beetle-vb-libretro/`: コア実装。
+
+---
 
 ## Legal
-- This project is distributed under GPL-2.0 (see `LICENSE`).
-- Use only ROMs you legally own. Do not distribute copyrighted ROMs.
+- This repository is distributed under GPL-2.0. See `LICENSE`.
+- ROMs are not included. Use only ROM images you legally own.

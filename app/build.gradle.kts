@@ -27,8 +27,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            isMinifyEnabled = false
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
+        }
+
         release {
             isMinifyEnabled = false
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -54,6 +64,16 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
+    }
+}
+
+android.applicationVariants.all {
+    val variantName = name
+    val version = versionName ?: "dev"
+    outputs.all {
+        @Suppress("UNCHECKED_CAST")
+        val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+        output.outputFileName = "virtualvirtualboy-$version-$variantName.apk"
     }
 }
 
