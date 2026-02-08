@@ -34,6 +34,30 @@ Current milestone: `v0.1.0-beta.1`
 ./gradlew assembleRelease
 ```
 
+### Codex / Claude Setup Prompt
+You can paste the following prompt into Codex/Claude to bootstrap this repo quickly.
+
+```text
+You are in the `virtualvirtualboy` repository.
+Set up the Android build environment and produce a debug APK.
+
+Requirements:
+- JDK 17
+- Android SDK Platform 35
+- NDK 26.1.10909125
+- CMake 3.22.1
+
+Steps:
+1. Verify Java version and ensure Gradle uses JDK 17.
+2. Run `./gradlew clean assembleDebug`.
+3. Report build result and exact APK path.
+4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. If `adb` is available and Quest is connected, run:
+   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
+   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+6. If any step fails, show the error and propose the minimum fix.
+```
+
 ### APK Output Naming
 APK files are now generated with explicit names:
 - `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
@@ -110,6 +134,30 @@ Android ネイティブ + OpenXR で実装しています。
 ```bash
 ./gradlew assembleDebug
 ./gradlew assembleRelease
+```
+
+### Codex / Claude 用セットアッププロンプト
+以下を Codex / Claude に貼り付けると、セットアップとビルドを自動実行できます。
+
+```text
+You are in the `virtualvirtualboy` repository.
+Set up the Android build environment and produce a debug APK.
+
+Requirements:
+- JDK 17
+- Android SDK Platform 35
+- NDK 26.1.10909125
+- CMake 3.22.1
+
+Steps:
+1. Verify Java version and ensure Gradle uses JDK 17.
+2. Run `./gradlew clean assembleDebug`.
+3. Report build result and exact APK path.
+4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. If `adb` is available and Quest is connected, run:
+   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
+   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+6. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK 名称
