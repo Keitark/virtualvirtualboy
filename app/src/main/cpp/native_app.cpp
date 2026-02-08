@@ -342,8 +342,8 @@ void DrawInfoPanel(
         return;
     }
 
-    const int lineHeight = (kGlyphHeight * kTextScale) + 2;
-    const int padding = 8;
+    const int lineHeight = (kGlyphHeight * kTextScale) + 1;
+    const int padding = 6;
     const int panelWidth = std::min(eyeWidth - 16, 340);
     const int panelHeight = (padding * 2) + (lineHeight * static_cast<int>(lines.size()));
     if (panelWidth <= 0 || panelHeight <= 0) {
@@ -854,7 +854,7 @@ private:
 
     std::vector<std::string> buildInfoLines() const {
         std::vector<std::string> lines;
-        lines.reserve(14);
+        lines.reserve(10);
         const auto nowTicks = std::chrono::duration_cast<std::chrono::milliseconds>(
                                   std::chrono::steady_clock::now().time_since_epoch())
                                   .count();
@@ -873,10 +873,8 @@ private:
             lines.emplace_back("ROM: NONE");
         }
 
-        lines.emplace_back("ROMS: L3 (HIDE INFO)");
-        lines.emplace_back("SELECT: X");
+        lines.emplace_back("ROMS: L3 (HIDE INFO) / SELECT: X");
         lines.emplace_back("AUDIO: " + std::to_string(core_.audioSampleRate()) + " HZ");
-        lines.emplace_back("OPTIONS: SBS-RED-FAST");
         {
             std::ostringstream scaleText;
             scaleText << std::fixed << std::setprecision(2) << screenScale_;
@@ -887,10 +885,8 @@ private:
             convergenceText << std::fixed << std::setprecision(3) << stereoConvergence_;
             lines.emplace_back("STEREO CONV: " + convergenceText.str());
         }
+        lines.emplace_back("CALIB (HOLD L+R): U/D SIZE  L/R CONV  A RESET");
         lines.emplace_back("IPD: QUEST HARDWARE");
-        lines.emplace_back("CALIB: HOLD L+R");
-        lines.emplace_back("  U/D SIZE  L/R CONV  A RESET");
-        lines.emplace_back("TOGGLE: R3 CLICK");
         return lines;
     }
 
