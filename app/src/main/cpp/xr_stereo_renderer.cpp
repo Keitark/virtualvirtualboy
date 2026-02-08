@@ -750,8 +750,8 @@ void XrStereoRenderer::syncInput() {
 
     controllerState_.left = move.x < -kDeadzone;
     controllerState_.right = move.x > kDeadzone;
-    controllerState_.up = move.y < -kDeadzone;
-    controllerState_.down = move.y > kDeadzone;
+    controllerState_.up = move.y > kDeadzone;
+    controllerState_.down = move.y < -kDeadzone;
 
     controllerState_.a = getBooleanActionState(buttonAAction_);
     controllerState_.b = getBooleanActionState(buttonBAction_);
