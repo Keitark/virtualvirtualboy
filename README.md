@@ -1,6 +1,7 @@
 # virtualvirtualboy
 
 [![Status](https://img.shields.io/badge/status-beta-orange?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
+[![Release](https://img.shields.io/github/v/tag/Keitark/virtualvirtualboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
@@ -9,6 +10,11 @@
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
 Current milestone: `v0.1.0-beta.1`
+
+Project links:
+- Releases: <https://github.com/Keitark/virtualvirtualboy/releases>
+- Issues: <https://github.com/Keitark/virtualvirtualboy/issues>
+- Discussions/feedback: open an Issue with the `type: feature` label.
 
 ---
 
