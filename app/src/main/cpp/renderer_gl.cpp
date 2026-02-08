@@ -22,7 +22,8 @@ constexpr char kFragmentShader[] =
     "uniform sampler2D uTex;\n"
     "void main() {\n"
     "  vec4 c = texture2D(uTex, vUv);\n"
-    "  gl_FragColor = vec4(c.r, c.g, c.b, 1.0);\n"
+    "  float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "  gl_FragColor = vec4(l, l * 0.08, l * 0.03, 1.0);\n"
     "}\n";
 
 GLuint CompileShader(GLenum type, const char* source) {

@@ -6,9 +6,11 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.util.Log
 
 class MainActivity : NativeActivity() {
     external fun nativeOnRomSelected(data: ByteArray, displayName: String)
+    external fun nativeOnRomPickerDismissed()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,11 +28,18 @@ class MainActivity : NativeActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_CODE_PICK_ROM || resultCode != RESULT_OK) {
+        if (requestCode != REQUEST_CODE_PICK_ROM) {
+            return
+        }
+        if (resultCode != RESULT_OK) {
+            notifyPickerDismissedSafe()
             return
         }
 
-        val uri = data?.data ?: return
+        val uri = data?.data ?: run {
+            notifyPickerDismissedSafe()
+            return
+        }
         try {
             val flags = data.flags and
                 (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -40,11 +49,32 @@ class MainActivity : NativeActivity() {
         }
 
         val displayName = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "picked.vb")
-        val payload = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return
-        if (payload.isEmpty()) {
+        val payload = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: run {
+            notifyPickerDismissedSafe()
             return
         }
-        nativeOnRomSelected(payload, displayName)
+        if (payload.isEmpty()) {
+            notifyPickerDismissedSafe()
+            return
+        }
+        notifyRomSelectedSafe(payload, displayName)
+        notifyPickerDismissedSafe()
+    }
+
+    private fun notifyRomSelectedSafe(data: ByteArray, displayName: String) {
+        try {
+            nativeOnRomSelected(data, displayName)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "nativeOnRomSelected unavailable", e)
+        }
+    }
+
+    private fun notifyPickerDismissedSafe() {
+        try {
+            nativeOnRomPickerDismissed()
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "nativeOnRomPickerDismissed unavailable", e)
+        }
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -59,6 +89,15 @@ class MainActivity : NativeActivity() {
     }
 
     private companion object {
+        init {
+            try {
+                System.loadLibrary("virtualvirtualboy")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Failed loading native library", e)
+            }
+        }
+
+        const val TAG = "VirtualVirtualBoy"
         const val REQUEST_CODE_PICK_ROM = 1001
     }
 }

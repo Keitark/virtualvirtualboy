@@ -16,15 +16,10 @@ endif()
 set(NATIVE_APP_GLUE_DIR "${ANDROID_NDK_DIR}/sources/android/native_app_glue")
 
 add_library(
-    native_app_glue STATIC
-    "${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c"
-)
-
-target_include_directories(native_app_glue PUBLIC "${NATIVE_APP_GLUE_DIR}")
-
-add_library(
     virtualvirtualboy SHARED
+    "${NATIVE_APP_GLUE_DIR}/android_native_app_glue.c"
     native_app.cpp
+    audio_player.cpp
     renderer_gl.cpp
     xr_stereo_renderer.cpp
     libretro_vb_core.cpp
@@ -47,6 +42,7 @@ set(BEETLE_VB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb
 target_include_directories(
     virtualvirtualboy PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${NATIVE_APP_GLUE_DIR}"
     "${BEETLE_VB_DIR}"
     "${BEETLE_VB_DIR}/mednafen"
     "${BEETLE_VB_DIR}/mednafen/include"
@@ -73,15 +69,16 @@ find_library(ANDROID_LIB android)
 find_library(LOG_LIB log)
 find_library(EGL_LIB EGL)
 find_library(GLESV2_LIB GLESv2)
+find_library(AAUDIO_LIB aaudio)
 find_package(OpenXR REQUIRED CONFIG)
 
 target_link_libraries(
     virtualvirtualboy
     PRIVATE
-    native_app_glue
     ${ANDROID_LIB}
     ${LOG_LIB}
     ${EGL_LIB}
     ${GLESV2_LIB}
+    ${AAUDIO_LIB}
     OpenXR::openxr_loader
 )

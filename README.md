@@ -1,66 +1,62 @@
 # virtualvirtualboy
 
-Quest-focused Virtual Boy emulator project (Quest 2+ baseline).
+Virtual Boy emulator for Meta Quest (Quest 2+), built as a native Android/OpenXR app.
 
-## Current Status
-- Native Android app (`NativeActivity`) with NDK/CMake build.
-- Real Virtual Boy emulation core integrated: `libretro/beetle-vb-libretro` (Mednafen VB).
-- OpenXR stereo renderer integrated (Quest-ready path) with fallback flat GLES renderer.
-- Core is forced to `side-by-side` 3D mode and each eye samples its respective half.
+Current milestone: `0.1.0-beta.1`.
+
+## Features
+- Beetle VB (`mednafen`) libretro core integrated in-app.
+- OpenXR stereo rendering path for Quest, with GLES fallback renderer.
+- Red palette output (`black & red`) and side-by-side eye rendering.
+- Audio output via `AAudio`.
 - ROM loading:
-  - SAF file picker supports arbitrary ROM filenames.
-  - Auto-load probes (fallback):
-  - `/sdcard/Download/test.vb`
-  - `/sdcard/Download/test.vboy`
-  - `/sdcard/Download/rom.vb`
-
-## Project Layout
-- `app/src/main/java/.../MainActivity.kt`: Android entry activity.
-- `app/src/main/cpp/native_app.cpp`: native loop, app lifecycle, input mapping.
-- `app/src/main/cpp/libretro_vb_core.*`: libretro bridge and ROM/frame callbacks.
-- `app/src/main/cpp/renderer_gl.*`: EGL/GLES renderer.
-- `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR session, stereo swapchains, per-eye rendering.
-- `third_party/beetle-vb-libretro/`: embedded VB core source (GPL-2.0).
+  - Android SAF picker (arbitrary filename support).
+  - Fallback scan: `/sdcard/Download/test.vb`, `/sdcard/Download/test.vboy`, `/sdcard/Download/rom.vb`.
+- In-app info window and live stereo calibration:
+  - Screen size and stereo convergence tuning.
+  - Settings persisted across launches.
 
 ## Build
-1. Install Android SDK components:
-   - `platforms;android-35`
-   - `build-tools;35.0.1`
-   - `ndk;26.1.10909125`
-   - `cmake;3.22.1`
-2. Use JDK 17.
-3. Build:
+Requirements:
+- JDK 17
+- Android SDK platform 35
+- NDK `26.1.10909125`
+- CMake `3.22.1`
 
+Build debug APK:
 ```bash
 ./gradlew assembleDebug
 ```
 
-## Run on Quest
-1. Enable Developer Mode on Quest.
-2. Connect via USB and verify with `adb devices`.
-3. Install:
-
+## Install on Quest
 ```bash
+adb devices
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 
-4. Push a ROM:
+## Controls (Quest)
+- `A/B`: VB `A/B`
+- `Y`: Start
+- `X`: Select
+- `L1/R1` (and triggers): VB `L/R`
+- Left stick / D-pad: movement
+- `R3`: toggle info window
+- `L3`: open ROM picker (only when info window is hidden)
 
-```bash
-adb push your_game.vb /sdcard/Download/test.vb
-```
+Calibration (when info window is shown):
+- Hold `L + R`, then:
+  - `Up/Down`: screen size
+  - `Left/Right`: stereo convergence
+  - `A`: reset defaults
 
-5. Launch app from Unknown Sources.
-6. If no fallback ROM is found, the picker opens and you can choose any `.vb/.vboy` file.
+## Repository Layout
+- `app/src/main/java/.../MainActivity.kt`: Android activity + picker bridge.
+- `app/src/main/cpp/native_app.cpp`: native app loop, input mapping, overlay, calibration.
+- `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR session, swapchains, XR input.
+- `app/src/main/cpp/libretro_vb_core.*`: libretro core bridge.
+- `third_party/beetle-vb-libretro/`: embedded core source.
 
-## Input Mapping
-- D-pad: VB left D-pad
-- Gamepad `A/B`: VB `A/B`
-- `L1/R1`: VB `L/R`
-- `Start/Select`: VB `Start/Select`
-
-## Next Steps
-1. Validate on Quest hardware and tune OpenXR lifecycle edge cases.
-2. Add SAF ROM picker and persistent game library.
-3. Wire audio output (AAudio/OpenSL ES) and in-app options.
-4. Add save states and per-game config.
+## Legal
+- This project is distributed under GPL-2.0 (see `LICENSE`).
+- Use only ROMs you legally own. Do not distribute copyrighted ROMs.
