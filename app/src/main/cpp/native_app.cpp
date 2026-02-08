@@ -33,6 +33,8 @@ constexpr float kMaxStereoConvergence = 0.08f;
 constexpr float kScreenScaleStep = 0.03f;
 constexpr float kStereoConvergenceStep = 0.004f;
 constexpr char kPresentationSettingsFile[] = "presentation_settings.cfg";
+constexpr int kStandbyFrameWidth = 768;
+constexpr int kStandbyFrameHeight = 384;
 
 struct PendingRom {
     std::mutex mutex;
@@ -582,6 +584,21 @@ public:
             } else {
                 reloadCounter_--;
             }
+
+            int standbyWidth = 0;
+            int standbyHeight = 0;
+            const uint32_t* standbyPixels = composeStandbyFrame(standbyWidth, standbyHeight);
+            if (xrRenderer_.initialized()) {
+                xrRenderer_.updateFrame(standbyPixels, standbyWidth, standbyHeight);
+                const bool xrRendered = xrRenderer_.renderFrame();
+                if (!xrRendered && renderer_.initialized()) {
+                    renderer_.updateFrame(standbyPixels, standbyWidth, standbyHeight);
+                    renderer_.render();
+                }
+            } else if (renderer_.initialized()) {
+                renderer_.updateFrame(standbyPixels, standbyWidth, standbyHeight);
+                renderer_.render();
+            }
         } else {
             VbInputState mergedInput = input_;
             mergedInput.left = mergedInput.left || xrState.left;
@@ -861,6 +878,73 @@ private:
         return lines;
     }
 
+    const uint32_t* composeStandbyFrame(int& outWidth, int& outHeight) {
+        outWidth = kStandbyFrameWidth;
+        outHeight = kStandbyFrameHeight;
+        standbyFrame_.assign(
+            static_cast<size_t>(kStandbyFrameWidth) * static_cast<size_t>(kStandbyFrameHeight),
+            0xFF000000);
+
+        const bool canDrawMonoText = kStandbyFrameWidth > 40 && kStandbyFrameHeight > 40;
+        if (canDrawMonoText) {
+            DrawText(
+                standbyFrame_,
+                kStandbyFrameWidth,
+                kStandbyFrameHeight,
+                "NO ROM LOADED",
+                18,
+                18,
+                2,
+                0xFFFFFFFF);
+
+            if (showInfoWindow_) {
+                DrawText(
+                    standbyFrame_,
+                    kStandbyFrameWidth,
+                    kStandbyFrameHeight,
+                    "R3: HIDE INFO",
+                    18,
+                    40,
+                    2,
+                    0xFFFFFFFF);
+            } else {
+                DrawText(
+                    standbyFrame_,
+                    kStandbyFrameWidth,
+                    kStandbyFrameHeight,
+                    "L3: OPEN ROM PICKER",
+                    18,
+                    40,
+                    2,
+                    0xFFFFFFFF);
+                DrawText(
+                    standbyFrame_,
+                    kStandbyFrameWidth,
+                    kStandbyFrameHeight,
+                    "R3: SHOW INFO",
+                    18,
+                    62,
+                    2,
+                    0xFFFFFFFF);
+            }
+        }
+
+        if (showInfoWindow_) {
+            const std::vector<std::string> lines = buildInfoLines();
+            const int eyeWidth = kStandbyFrameWidth / 2;
+            DrawInfoPanel(standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, 0, eyeWidth, lines);
+            DrawInfoPanel(
+                standbyFrame_,
+                kStandbyFrameWidth,
+                kStandbyFrameHeight,
+                eyeWidth,
+                eyeWidth,
+                lines);
+        }
+
+        return standbyFrame_.data();
+    }
+
     const uint32_t* composeRenderFrame(
         const std::vector<uint32_t>& sourceFrame, const int width, const int height) {
         if (!showInfoWindow_) {
@@ -988,6 +1072,7 @@ private:
     bool showInfoWindow_ = true;
     bool infoToggleHeld_ = false;
     std::vector<uint32_t> overlayFrame_;
+    std::vector<uint32_t> standbyFrame_;
     int fpsFrameCount_ = 0;
     double fps_ = 0.0;
     std::chrono::steady_clock::time_point fpsWindowStart_ = std::chrono::steady_clock::now();
