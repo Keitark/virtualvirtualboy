@@ -50,19 +50,25 @@ adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 
 ### Controls (Quest)
-- `A/B`: VB `A/B`
-- `Y`: Start
-- `X`: Select
-- `L1/R1` (and triggers): VB `L/R`
-- Left stick / D-pad: movement
-- `R3`: toggle info window
-- `L3`: open ROM picker (only when info window is hidden)
+| Quest Input | Emulator Action |
+| --- | --- |
+| `A` | VB `A` |
+| `B` | VB `B` |
+| `Y` | Start |
+| `X` | Select |
+| `L1` / `R1` / triggers | VB `L` / `R` |
+| Left stick / D-pad | Movement |
+| `R3` | Toggle info window |
+| `L3` | Open ROM picker (only when info window is hidden) |
 
 Calibration (while info window is shown):
-- Hold `L + R`
-- `Up/Down`: screen size
-- `Left/Right`: stereo convergence
-- `A`: reset defaults
+
+| Input | Effect |
+| --- | --- |
+| Hold `L + R` | Enter calibration modifier |
+| `Up` / `Down` | Increase / decrease screen size |
+| `Left` / `Right` | Adjust stereo convergence |
+| `A` | Reset calibration to defaults |
 
 ### Project Layout
 - `app/src/main/java/.../MainActivity.kt`: Android activity + picker bridge.
@@ -122,19 +128,25 @@ adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 
 ### 操作（Quest）
-- `A/B`: VB の `A/B`
-- `Y`: Start
-- `X`: Select
-- `L1/R1`（+トリガー）: VB の `L/R`
-- 左スティック / D-pad: 移動
-- `R3`: 情報ウィンドウ表示切替
-- `L3`: ROM ピッカー起動（情報ウィンドウ非表示時のみ）
+| Quest 入力 | 動作 |
+| --- | --- |
+| `A` | VB `A` |
+| `B` | VB `B` |
+| `Y` | Start |
+| `X` | Select |
+| `L1` / `R1` / トリガー | VB `L` / `R` |
+| 左スティック / D-pad | 移動 |
+| `R3` | 情報ウィンドウ表示切替 |
+| `L3` | ROM ピッカー起動（情報ウィンドウ非表示時のみ） |
 
 情報ウィンドウ表示中の調整:
-- `L + R` を押しながら
-- `Up/Down`: 画面サイズ
-- `Left/Right`: 立体収束量
-- `A`: 初期値へ戻す
+
+| 入力 | 効果 |
+| --- | --- |
+| `L + R` を押し続ける | 調整モード |
+| `Up` / `Down` | 画面サイズの増減 |
+| `Left` / `Right` | 立体収束量の調整 |
+| `A` | 初期値へ戻す |
 
 ### ディレクトリ構成
 - `app/src/main/java/.../MainActivity.kt`: Activity と ROM ピッカー連携。
