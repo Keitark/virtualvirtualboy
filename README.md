@@ -281,6 +281,7 @@ adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
 - First-party repository code is distributed under MIT. See `LICENSE`.
 - Third-party notices and dependency licenses are documented in `THIRD_PARTY_NOTICES.md`.
 - Beetle VB is GPL-2.0. If you distribute binaries linked with it, comply with GPL-2.0 obligations.
+- This is an unofficial project and is not affiliated with, endorsed by, or sponsored by Nintendo.
 - ROMs are not included. Use only ROM images you legally own.
 - Publishing emulator source code is generally lower risk than publishing game content, but legal risk still exists depending on distribution details and jurisdiction.
 - Do not upload/distribute commercial ROMs, BIOS files, keys, or copyrighted game assets in this repository.
