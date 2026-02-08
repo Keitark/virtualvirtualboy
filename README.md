@@ -7,7 +7,9 @@ Quest-focused Virtual Boy emulator project (Quest 2+ baseline).
 - Real Virtual Boy emulation core integrated: `libretro/beetle-vb-libretro` (Mednafen VB).
 - OpenXR stereo renderer integrated (Quest-ready path) with fallback flat GLES renderer.
 - Core is forced to `side-by-side` 3D mode and each eye samples its respective half.
-- ROM auto-load probes:
+- ROM loading:
+  - SAF file picker supports arbitrary ROM filenames.
+  - Auto-load probes (fallback):
   - `/sdcard/Download/test.vb`
   - `/sdcard/Download/test.vboy`
   - `/sdcard/Download/rom.vb`
@@ -49,6 +51,7 @@ adb push your_game.vb /sdcard/Download/test.vb
 ```
 
 5. Launch app from Unknown Sources.
+6. If no fallback ROM is found, the picker opens and you can choose any `.vb/.vboy` file.
 
 ## Input Mapping
 - D-pad: VB left D-pad

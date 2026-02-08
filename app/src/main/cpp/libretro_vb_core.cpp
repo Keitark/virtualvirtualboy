@@ -173,28 +173,47 @@ bool LibretroVbCore::loadRomFromFile(const std::string& path) {
         return false;
     }
 
-    romData_.resize(romSize);
-    rom.read(reinterpret_cast<char*>(romData_.data()), static_cast<std::streamsize>(romData_.size()));
+    std::vector<uint8_t> fileData(romSize);
+    rom.read(reinterpret_cast<char*>(fileData.data()), static_cast<std::streamsize>(fileData.size()));
     if (!rom.good() && !rom.eof()) {
         setError("Failed reading ROM data: " + path);
         return false;
     }
 
+    return loadRomFromBytes(fileData.data(), fileData.size(), path);
+}
+
+bool LibretroVbCore::loadRomFromBytes(
+    const uint8_t* data, const size_t size, const std::string& nameHint) {
+    if (!initialized_) {
+        setError("libretro core not initialized");
+        return false;
+    }
+    if (data == nullptr || size == 0) {
+        setError("Invalid ROM payload");
+        return false;
+    }
+
+    unloadRom();
+    frameReady_ = false;
+    romData_.assign(data, data + size);
+    romPathLabel_ = nameHint.empty() ? "memory.vb" : nameHint;
+
     retro_game_info info{};
-    info.path = path.c_str();
+    info.path = romPathLabel_.c_str();
     info.data = romData_.data();
     info.size = romData_.size();
     info.meta = nullptr;
 
     if (!retro_load_game(&info)) {
-        setError("retro_load_game failed: " + path);
+        setError("retro_load_game failed: " + romPathLabel_);
         romData_.clear();
         return false;
     }
 
     romLoaded_ = true;
     lastError_.clear();
-    LOGI("ROM loaded: %s", path.c_str());
+    LOGI("ROM loaded: %s (%zu bytes)", romPathLabel_.c_str(), romData_.size());
     return true;
 }
 

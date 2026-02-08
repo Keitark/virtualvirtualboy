@@ -24,6 +24,7 @@ public:
     void shutdown();
 
     bool loadRomFromFile(const std::string& path);
+    bool loadRomFromBytes(const uint8_t* data, size_t size, const std::string& nameHint);
     void unloadRom();
 
     void setInputState(const VbInputState& inputState);
@@ -50,6 +51,7 @@ private:
     int frameWidth_ = 0;
     int frameHeight_ = 0;
     uint16_t inputMask_ = 0;
+    std::string romPathLabel_ = "memory.vb";
     std::vector<uint8_t> romData_;
     std::vector<uint32_t> frameBuffer_;
     std::string lastError_;

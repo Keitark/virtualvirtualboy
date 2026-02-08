@@ -1,7 +1,9 @@
 #include <android/keycodes.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
 
 #include <chrono>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -15,6 +17,29 @@ namespace {
 
 constexpr auto kFrameTarget = std::chrono::milliseconds(20);  // ~50 FPS for VB content.
 constexpr int kRomReloadFrames = 120;
+
+struct PendingRom {
+    std::mutex mutex;
+    std::vector<uint8_t> bytes;
+    std::string name;
+    bool ready = false;
+};
+
+PendingRom gPendingRom;
+
+bool TakePendingRom(std::vector<uint8_t>& outBytes, std::string& outName) {
+    std::scoped_lock lock(gPendingRom.mutex);
+    if (!gPendingRom.ready || gPendingRom.bytes.empty()) {
+        return false;
+    }
+
+    outBytes = std::move(gPendingRom.bytes);
+    outName = std::move(gPendingRom.name);
+    gPendingRom.ready = false;
+    gPendingRom.bytes.clear();
+    gPendingRom.name.clear();
+    return true;
+}
 
 class App {
 public:
@@ -100,6 +125,11 @@ public:
             case AKEYCODE_BUTTON_SELECT:
                 input_.select = pressed;
                 return 1;
+            case AKEYCODE_BUTTON_X:
+                if (pressed) {
+                    requestRomPicker();
+                }
+                return 1;
             default:
                 return 0;
         }
@@ -117,6 +147,17 @@ public:
                 LOGW("OpenXR requested exit");
                 running_ = false;
                 return;
+            }
+        }
+
+        std::vector<uint8_t> pickedRom;
+        std::string pickedName;
+        if (TakePendingRom(pickedRom, pickedName)) {
+            if (core_.loadRomFromBytes(pickedRom.data(), pickedRom.size(), pickedName)) {
+                LOGI("ROM loaded from picker: %s", pickedName.c_str());
+                pickerRequested_ = false;
+            } else {
+                LOGE("Picker ROM load failed: %s", core_.lastError().c_str());
             }
         }
 
@@ -188,6 +229,52 @@ private:
         if (!core_.lastError().empty()) {
             LOGW("ROM not loaded yet. Last error: %s", core_.lastError().c_str());
         }
+
+        if (!pickerRequested_) {
+            requestRomPicker();
+        }
+    }
+
+    void requestRomPicker() {
+        if (pickerRequested_ || app_ == nullptr || app_->activity == nullptr ||
+            app_->activity->vm == nullptr || app_->activity->clazz == nullptr) {
+            return;
+        }
+
+        JNIEnv* env = nullptr;
+        bool attached = false;
+        if (app_->activity->vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+            if (app_->activity->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+                LOGE("Failed to attach JNI thread for ROM picker");
+                return;
+            }
+            attached = true;
+        }
+
+        jclass activityClass = env->GetObjectClass(app_->activity->clazz);
+        if (activityClass == nullptr) {
+            if (attached) {
+                app_->activity->vm->DetachCurrentThread();
+            }
+            return;
+        }
+
+        jmethodID openPickerMethod = env->GetMethodID(activityClass, "openRomPicker", "()V");
+        if (openPickerMethod != nullptr) {
+            env->CallVoidMethod(app_->activity->clazz, openPickerMethod);
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            } else {
+                pickerRequested_ = true;
+                LOGI("Requested ROM picker");
+            }
+        }
+        env->DeleteLocalRef(activityClass);
+
+        if (attached) {
+            app_->activity->vm->DetachCurrentThread();
+        }
     }
 
     android_app* app_ = nullptr;
@@ -199,6 +286,7 @@ private:
     bool running_ = false;
     bool resumed_ = false;
     int reloadCounter_ = 0;
+    bool pickerRequested_ = false;
 };
 
 void HandleAppCmd(android_app* app, int32_t cmd) {
@@ -217,6 +305,36 @@ int32_t HandleInput(android_app* app, AInputEvent* event) {
 }
 
 }  // namespace
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_keitark_virtualvirtualboy_MainActivity_nativeOnRomSelected(
+    JNIEnv* env, jobject /*thiz*/, jbyteArray data, jstring displayName) {
+    if (data == nullptr) {
+        return;
+    }
+
+    const jsize size = env->GetArrayLength(data);
+    if (size <= 0) {
+        return;
+    }
+
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(bytes.data()));
+
+    std::string name = "picked.vb";
+    if (displayName != nullptr) {
+        const char* chars = env->GetStringUTFChars(displayName, nullptr);
+        if (chars != nullptr) {
+            name = chars;
+            env->ReleaseStringUTFChars(displayName, chars);
+        }
+    }
+
+    std::scoped_lock lock(gPendingRom.mutex);
+    gPendingRom.bytes = std::move(bytes);
+    gPendingRom.name = std::move(name);
+    gPendingRom.ready = true;
+}
 
 void android_main(struct android_app* app) {
     App appInstance(app);
