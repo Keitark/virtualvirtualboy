@@ -3,7 +3,7 @@
 [![Status](https://img.shields.io/badge/status-beta-orange?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
-[![License](https://img.shields.io/badge/license-GPL--2.0-blue?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/Keitark/virtualvirtualboy?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/commits/main)
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
@@ -63,13 +63,14 @@ Requirements:
 
 Steps:
 1. Verify Java version and ensure Gradle uses JDK 17.
-2. Run `./gradlew clean assembleDebug`.
-3. Report build result and exact APK path.
-4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
-5. If `adb` is available and Quest is connected, run:
+2. Run `git submodule update --init --recursive`.
+3. Run `./gradlew clean assembleDebug`.
+4. Report build result and exact APK path.
+5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+6. If `adb` is available and Quest is connected, run:
    - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
-6. If any step fails, show the error and propose the minimum fix.
+7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK Output Naming
@@ -197,13 +198,14 @@ Requirements:
 
 Steps:
 1. Verify Java version and ensure Gradle uses JDK 17.
-2. Run `./gradlew clean assembleDebug`.
-3. Report build result and exact APK path.
-4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
-5. If `adb` is available and Quest is connected, run:
+2. Run `git submodule update --init --recursive`.
+3. Run `./gradlew clean assembleDebug`.
+4. Report build result and exact APK path.
+5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+6. If `adb` is available and Quest is connected, run:
    - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
-6. If any step fails, show the error and propose the minimum fix.
+7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK 名称
@@ -270,9 +272,11 @@ adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
 ---
 
 ## Legal
-- This repository is distributed under GPL-2.0. See `LICENSE`.
+- First-party repository code is distributed under MIT. See `LICENSE`.
+- Third-party notices and dependency licenses are documented in `THIRD_PARTY_NOTICES.md`.
+- Beetle VB is GPL-2.0. If you distribute binaries linked with it, comply with GPL-2.0 obligations.
 - ROMs are not included. Use only ROM images you legally own.
 - Publishing emulator source code is generally lower risk than publishing game content, but legal risk still exists depending on distribution details and jurisdiction.
 - Do not upload/distribute commercial ROMs, BIOS files, keys, or copyrighted game assets in this repository.
-- If you distribute modified binaries of this GPL project, provide corresponding source and preserve license notices.
+- If you distribute modified binaries, provide corresponding source and preserve required license notices.
 - This is not legal advice.
