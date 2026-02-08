@@ -47,6 +47,11 @@ Adopt formatter/linter tooling early (for example, Prettier/ESLint or Black/Ruff
 - Use `Fixes #<issue>` only when fully complete; otherwise use `Refs #<issue>`.
 - Do not merge until acceptance criteria are met; delete merged local/remote branches afterward.
 
+### Issue/PR Body Formatting Rule
+- Never create issue/PR bodies with escaped newline sequences like `\n` in a one-line string.
+- Always pass multi-line Markdown as real newlines (for example, `gh issue create --body-file <file>` or a multi-line here-doc/here-string).
+- After creating or editing an issue/PR, verify rendered formatting with `gh issue view <id>` / `gh pr view <id>`.
+
 ## Security & Configuration Tips
 - Never commit secrets; use environment variables and a `.env.example`.
 - Keep local artifacts in `.gitignore`.
