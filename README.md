@@ -3,7 +3,7 @@
 [![Status](https://img.shields.io/badge/status-beta-orange?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
-[![License](https://img.shields.io/badge/license-GPL--2.0-blue?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/Keitark/virtualvirtualboy?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/commits/main)
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
@@ -28,6 +28,20 @@ Current milestone: `v0.1.0-beta.1`
 - NDK `26.1.10909125`
 - CMake `3.22.1`
 
+### First-Time Setup (Core Download)
+This repository uses a Git submodule for the Beetle VB core.
+
+```bash
+git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
+cd virtualvirtualboy
+```
+
+If you already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
 ### Build Commands
 ```bash
 ./gradlew assembleDebug
@@ -49,13 +63,14 @@ Requirements:
 
 Steps:
 1. Verify Java version and ensure Gradle uses JDK 17.
-2. Run `./gradlew clean assembleDebug`.
-3. Report build result and exact APK path.
-4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
-5. If `adb` is available and Quest is connected, run:
+2. Run `git submodule update --init --recursive`.
+3. Run `./gradlew clean assembleDebug`.
+4. Report build result and exact APK path.
+5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+6. If `adb` is available and Quest is connected, run:
    - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
-6. If any step fails, show the error and propose the minimum fix.
+7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK Output Naming
@@ -72,6 +87,24 @@ adb devices
 adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
 adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
+
+### How to Add ROMs
+Two supported methods:
+
+1. In-app picker (recommended)
+- Hide info window (`R3`) if it is open.
+- Press `L3` to open Android file picker.
+- Select your `.vb` / `.vboy` ROM (any filename is allowed).
+
+2. Fallback auto-load path (`adb push`)
+```bash
+adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
+```
+
+The app probes these fallback paths on startup:
+- `/sdcard/Download/test.vb`
+- `/sdcard/Download/test.vboy`
+- `/sdcard/Download/rom.vb`
 
 ### Controls (Quest)
 | Quest Input | Emulator Action |
@@ -99,7 +132,7 @@ Calibration (while info window is shown):
 - `app/src/main/cpp/native_app.cpp`: native loop, lifecycle, input, overlay, calibration.
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR stereo renderer + XR input actions.
 - `app/src/main/cpp/libretro_vb_core.*`: libretro bridge (video/audio/input).
-- `third_party/beetle-vb-libretro/`: bundled core source.
+- `third_party/beetle-vb-libretro/`: Beetle VB Git submodule (download on setup).
 
 ### Roadmap
 - Save states + per-ROM config.
@@ -130,6 +163,20 @@ Android ネイティブ + OpenXR で実装しています。
 - NDK `26.1.10909125`
 - CMake `3.22.1`
 
+### 初回セットアップ（コア取得）
+このリポジトリでは Beetle VB コアを Git submodule として管理しています。
+
+```bash
+git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
+cd virtualvirtualboy
+```
+
+submodule なしで clone 済みの場合:
+
+```bash
+git submodule update --init --recursive
+```
+
 ### ビルドコマンド
 ```bash
 ./gradlew assembleDebug
@@ -151,13 +198,14 @@ Requirements:
 
 Steps:
 1. Verify Java version and ensure Gradle uses JDK 17.
-2. Run `./gradlew clean assembleDebug`.
-3. Report build result and exact APK path.
-4. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
-5. If `adb` is available and Quest is connected, run:
+2. Run `git submodule update --init --recursive`.
+3. Run `./gradlew clean assembleDebug`.
+4. Report build result and exact APK path.
+5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+6. If `adb` is available and Quest is connected, run:
    - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
-6. If any step fails, show the error and propose the minimum fix.
+7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK 名称
@@ -174,6 +222,24 @@ adb devices
 adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
 adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
+
+### ROM の入れ方
+対応方法は 2 つです。
+
+1. アプリ内ピッカー（推奨）
+- 情報ウィンドウが表示中なら `R3` で閉じる
+- `L3` で Android のファイルピッカーを開く
+- `.vb` / `.vboy` ROM を選択（ファイル名は任意）
+
+2. 自動読込用の固定パスに `adb push`
+```bash
+adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
+```
+
+起動時に以下のパスを自動探索します:
+- `/sdcard/Download/test.vb`
+- `/sdcard/Download/test.vboy`
+- `/sdcard/Download/rom.vb`
 
 ### 操作（Quest）
 | Quest 入力 | 動作 |
@@ -201,10 +267,16 @@ adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 - `app/src/main/cpp/native_app.cpp`: ネイティブループ、入力、HUD、調整処理。
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR 描画と XR 入力。
 - `app/src/main/cpp/libretro_vb_core.*`: libretro ブリッジ。
-- `third_party/beetle-vb-libretro/`: コア実装。
+- `third_party/beetle-vb-libretro/`: Beetle VB の Git submodule（セットアップ時に取得）。
 
 ---
 
 ## Legal
-- This repository is distributed under GPL-2.0. See `LICENSE`.
+- First-party repository code is distributed under MIT. See `LICENSE`.
+- Third-party notices and dependency licenses are documented in `THIRD_PARTY_NOTICES.md`.
+- Beetle VB is GPL-2.0. If you distribute binaries linked with it, comply with GPL-2.0 obligations.
 - ROMs are not included. Use only ROM images you legally own.
+- Publishing emulator source code is generally lower risk than publishing game content, but legal risk still exists depending on distribution details and jurisdiction.
+- Do not upload/distribute commercial ROMs, BIOS files, keys, or copyrighted game assets in this repository.
+- If you distribute modified binaries, provide corresponding source and preserve required license notices.
+- This is not legal advice.

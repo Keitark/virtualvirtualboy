@@ -14,6 +14,14 @@ else()
 endif()
 
 set(NATIVE_APP_GLUE_DIR "${ANDROID_NDK_DIR}/sources/android/native_app_glue")
+set(BEETLE_VB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro")
+
+if(NOT EXISTS "${BEETLE_VB_DIR}/libretro.cpp")
+    message(FATAL_ERROR
+        "Missing Beetle VB core source at ${BEETLE_VB_DIR}. "
+        "Run: git submodule update --init --recursive"
+    )
+endif()
 
 add_library(
     virtualvirtualboy SHARED
@@ -23,22 +31,20 @@ add_library(
     renderer_gl.cpp
     xr_stereo_renderer.cpp
     libretro_vb_core.cpp
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/libretro.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/hw_cpu/v810/v810_cpu.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/mempatcher.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/vb/vsu.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/vb/input.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/vb/timer.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/vb/vip.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/hw_cpu/v810/fpu-new/softfloat.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/sound/Blip_Buffer.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/state.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/mednafen/settings.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/libretro-common/compat/compat_strl.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro/libretro-common/compat/compat_snprintf.c"
+    "${BEETLE_VB_DIR}/libretro.cpp"
+    "${BEETLE_VB_DIR}/mednafen/hw_cpu/v810/v810_cpu.cpp"
+    "${BEETLE_VB_DIR}/mednafen/mempatcher.cpp"
+    "${BEETLE_VB_DIR}/mednafen/vb/vsu.c"
+    "${BEETLE_VB_DIR}/mednafen/vb/input.c"
+    "${BEETLE_VB_DIR}/mednafen/vb/timer.c"
+    "${BEETLE_VB_DIR}/mednafen/vb/vip.c"
+    "${BEETLE_VB_DIR}/mednafen/hw_cpu/v810/fpu-new/softfloat.c"
+    "${BEETLE_VB_DIR}/mednafen/sound/Blip_Buffer.c"
+    "${BEETLE_VB_DIR}/mednafen/state.c"
+    "${BEETLE_VB_DIR}/mednafen/settings.c"
+    "${BEETLE_VB_DIR}/libretro-common/compat/compat_strl.c"
+    "${BEETLE_VB_DIR}/libretro-common/compat/compat_snprintf.c"
 )
-
-set(BEETLE_VB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/beetle-vb-libretro")
 target_include_directories(
     virtualvirtualboy PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
