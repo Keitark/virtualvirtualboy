@@ -1,6 +1,6 @@
 # virtualvirtualboy
 
-[![Status](https://img.shields.io/badge/status-beta-orange?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
 [![Release](https://img.shields.io/github/v/tag/Keitark/virtualvirtualboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
@@ -9,7 +9,7 @@
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
-Current milestone: `v0.1.0-beta.1`
+Current milestone: `v1.0.0`
 
 Project links:
 - Releases: <https://github.com/Keitark/virtualvirtualboy/releases>
@@ -74,7 +74,7 @@ Steps:
 4. Report build result and exact APK path.
 5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
+   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
@@ -84,13 +84,13 @@ APK files are now generated with explicit names:
 - `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
 - `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
 
-Example (`v0.1.0-beta.1`):
-- `virtualvirtualboy-0.1.0-beta.1-debug.apk`
+Example (`v1.0.0`):
+- `virtualvirtualboy-1.0.0-debug.apk`
 
 ### Install / Run on Quest
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
+adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
 adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 
@@ -153,7 +153,7 @@ Calibration (while info window is shown):
 `virtualvirtualboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
 Android ネイティブ + OpenXR で実装しています。
 
-現在のマイルストーン: `v0.1.0-beta.1`
+現在のマイルストーン: `v1.0.0`
 
 ### 主な機能
 - Beetle VB（`mednafen` / libretro）コアを統合。
@@ -209,7 +209,7 @@ Steps:
 4. Report build result and exact APK path.
 5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk`
+   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
    - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
@@ -219,13 +219,13 @@ Steps:
 - `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
 - `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
 
-例（`v0.1.0-beta.1`）:
-- `virtualvirtualboy-0.1.0-beta.1-debug.apk`
+例（`v1.0.0`）:
+- `virtualvirtualboy-1.0.0-debug.apk`
 
 ### Quest へのインストール
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-0.1.0-beta.1-debug.apk
+adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
 adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
 ```
 

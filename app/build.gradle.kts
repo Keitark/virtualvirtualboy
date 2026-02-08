@@ -12,8 +12,8 @@ android {
         applicationId = "com.keitark.virtualvirtualboy"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.0-beta.1"
+        versionCode = 100
+        versionName = "1.0.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
