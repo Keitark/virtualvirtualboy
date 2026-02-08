@@ -38,5 +38,8 @@ jobs:
             "cmake;3.22.1" \
             "ndk;26.1.10909125"
 
+      - name: Ensure Gradle wrapper is executable
+        run: chmod +x ./gradlew
+
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
