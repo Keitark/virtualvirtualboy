@@ -9,7 +9,7 @@
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
-Current milestone: `v1.0.0`
+Current milestone: `v1.0.2`
 
 Project links:
 - Releases: <https://github.com/Keitark/VRboy/releases>
@@ -104,8 +104,8 @@ APK files are generated here:
 - `app/build/outputs/apk/debug/*-debug.apk`
 - `app/build/outputs/apk/release/*-release.apk`
 
-Example (`v1.0.0`):
-- `*-1.0.0-debug.apk`
+Example (`v1.0.2`):
+- `*-1.0.2-debug.apk`
 
 Android package id: `com.keitark.vrboy`.
 
@@ -186,7 +186,7 @@ Calibration (while info window is shown):
 `VRboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
 Android ネイティブ + OpenXR で実装しています。
 
-現在のマイルストーン: `v1.0.0`
+現在のマイルストーン: `v1.0.2`
 
 ### 主な機能
 - Beetle VB（`mednafen` / libretro）コアを統合。
@@ -272,8 +272,8 @@ APK は次の場所に出力されます:
 - `app/build/outputs/apk/debug/*-debug.apk`
 - `app/build/outputs/apk/release/*-release.apk`
 
-例（`v1.0.0`）:
-- `*-1.0.0-debug.apk`
+例（`v1.0.2`）:
+- `*-1.0.2-debug.apk`
 
 Android package id: `com.keitark.vrboy`。
 
