@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <mutex>
@@ -32,6 +33,12 @@ constexpr float kMinStereoConvergence = -0.08f;
 constexpr float kMaxStereoConvergence = 0.08f;
 constexpr float kScreenScaleStep = 0.03f;
 constexpr float kStereoConvergenceStep = 0.004f;
+constexpr float kWalkOffsetStep = 0.022f;
+constexpr float kWalkOffsetLimit = 30.0f;
+constexpr float kWalkYawStep = 0.045f;
+constexpr float kWalkPitchStep = 0.035f;
+constexpr float kWalkPitchLimit = 1.20f;
+constexpr float kWalkStickDeadzone = 0.18f;
 constexpr char kPresentationSettingsFile[] = "presentation_settings.cfg";
 constexpr int kStandbyFrameWidth = 768;
 constexpr int kStandbyFrameHeight = 384;
@@ -372,6 +379,12 @@ void DrawInfoPanel(
 
 class App {
 public:
+    enum class ViewMode : int {
+        Classic = 0,
+        DepthLayer = 1,  // Keep value for backward compatibility with saved settings.
+        Anchored = 2,
+    };
+
     explicit App(android_app* app) : app_(app) {}
 
     void onCmd(const int32_t cmd) {
@@ -553,11 +566,16 @@ public:
         XrStereoRenderer::ControllerState xrState{};
         if (xrRenderer_.initialized()) {
             xrRenderer_.getControllerState(xrState);
+            xrRenderer_.setOverlayVisible(showInfoWindow_);
         }
-        if (xrState.rightThumbClick && !prevXrRightThumbClick_) {
+        const bool bothThumbClick = xrState.leftThumbClick && xrState.rightThumbClick;
+        if (bothThumbClick && !prevXrBothThumbClick_) {
+            resetWalkthroughHome(true);
+        }
+
+        if (!bothThumbClick && xrState.rightThumbClick && !prevXrRightThumbClick_) {
             toggleInfoWindow();
         }
-        prevXrRightThumbClick_ = xrState.rightThumbClick;
 
         std::vector<uint8_t> pickedRom;
         std::string pickedName;
@@ -582,7 +600,7 @@ public:
             }
         }
 
-        if (xrState.leftThumbClick && !prevXrLeftThumbClick_) {
+        if (!bothThumbClick && xrState.leftThumbClick && !prevXrLeftThumbClick_) {
             requestRomPicker();
         }
 
@@ -623,6 +641,7 @@ public:
             mergedInput.select = mergedInput.select || xrState.select;
 
             applyCalibrationInput(mergedInput);
+            applyDepthWalkthroughControls(xrState, mergedInput);
             core_.setInputState(mergedInput);
             core_.runFrame();
             pumpAudio();
@@ -633,6 +652,16 @@ public:
                 const uint32_t* renderPixels = composeRenderFrame(sourceFrame, width, height);
 
                 if (xrRenderer_.initialized()) {
+                    if (isDepthModeEnabled() && core_.hasMetadata()) {
+                        xrRenderer_.updateDepthMetadata(
+                            core_.metadataDisparity().data(),
+                            core_.metadataWorldIds().data(),
+                            core_.metadataSourceX().data(),
+                            core_.metadataSourceY().data(),
+                            core_.metadataWidth(),
+                            core_.metadataHeight(),
+                            core_.metadataFrameId());
+                    }
                     xrRenderer_.updateFrame(renderPixels, width, height);
                     const bool xrRendered = xrRenderer_.renderFrame();
                     if (!xrRendered && renderer_.initialized()) {
@@ -646,7 +675,9 @@ public:
             }
         }
 
+        prevXrBothThumbClick_ = bothThumbClick;
         prevXrLeftThumbClick_ = xrState.leftThumbClick;
+        prevXrRightThumbClick_ = xrState.rightThumbClick;
         updateFps(std::chrono::steady_clock::now());
 
         const auto frameElapsed = std::chrono::steady_clock::now() - frameStart;
@@ -697,11 +728,141 @@ private:
         LOGI("Info window %s", showInfoWindow_ ? "enabled" : "disabled");
     }
 
+    const char* viewModeName() const {
+        switch (viewMode_) {
+            case ViewMode::Classic:
+                return "CLASSIC";
+            case ViewMode::Anchored:
+                return "ANCHORED";
+            case ViewMode::DepthLayer:
+                return "DEPTH LAYER";
+            default:
+                return "CLASSIC";
+        }
+    }
+
+    bool isDepthModeEnabled() const { return viewMode_ == ViewMode::DepthLayer; }
+    bool isWorldAnchoredMode() const {
+        return viewMode_ == ViewMode::Anchored || viewMode_ == ViewMode::DepthLayer;
+    }
+
+    XrStereoRenderer::DepthRenderMode depthRenderMode() const {
+        return XrStereoRenderer::DepthRenderMode::Layer;
+    }
+
+    void toggleDepthViewMode() {
+        switch (viewMode_) {
+            case ViewMode::Classic:
+                viewMode_ = ViewMode::Anchored;
+                break;
+            case ViewMode::Anchored:
+                viewMode_ = ViewMode::DepthLayer;
+                break;
+            case ViewMode::DepthLayer:
+            default:
+                viewMode_ = ViewMode::Classic;
+                break;
+        }
+        applyPresentationConfig();
+        savePresentationSettings();
+        LOGI("View mode: %s", viewModeName());
+    }
+
+    void applyDepthWalkthroughControls(
+        const XrStereoRenderer::ControllerState& xrState, VbInputState& inputState) {
+        if (!xrRenderer_.initialized()) {
+            return;
+        }
+
+        const bool gripHeld = xrState.leftGrip || xrState.rightGrip;
+        if (!isWorldAnchoredMode() || !gripHeld) {
+            walkResetHeld_ = false;
+            xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
+            xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
+            return;
+        }
+
+        auto applyAxis = [](const float value) {
+            return (value > kWalkStickDeadzone || value < -kWalkStickDeadzone) ? value : 0.0f;
+        };
+
+        const float strafe = applyAxis(xrState.leftStickX);
+        const float forward = applyAxis(xrState.leftStickY);
+        const float turnYaw = applyAxis(xrState.rightStickX);
+        const float turnPitch = applyAxis(xrState.rightStickY);
+        const float rise = (xrState.r ? 1.0f : 0.0f) - (xrState.l ? 1.0f : 0.0f);
+
+        walkYaw_ += turnYaw * kWalkYawStep;
+        walkPitch_ = std::clamp(
+            walkPitch_ + (turnPitch * kWalkPitchStep), -kWalkPitchLimit, kWalkPitchLimit);
+
+        const float sinYaw = std::sin(walkYaw_);
+        const float cosYaw = std::cos(walkYaw_);
+        const float deltaX = (cosYaw * strafe) + (sinYaw * forward);
+        const float deltaZ = (sinYaw * strafe) - (cosYaw * forward);
+
+        walkOffsetX_ = std::clamp(
+            walkOffsetX_ + (deltaX * kWalkOffsetStep), -kWalkOffsetLimit, kWalkOffsetLimit);
+        walkOffsetY_ = std::clamp(
+            walkOffsetY_ + (rise * kWalkOffsetStep), -kWalkOffsetLimit, kWalkOffsetLimit);
+        walkOffsetZ_ = std::clamp(
+            walkOffsetZ_ + (deltaZ * kWalkOffsetStep), -kWalkOffsetLimit, kWalkOffsetLimit);
+
+        if (xrState.a && !walkResetHeld_) {
+            walkOffsetX_ = 0.0f;
+            walkOffsetY_ = 0.0f;
+            walkOffsetZ_ = 0.0f;
+            walkYaw_ = 0.0f;
+            walkPitch_ = 0.0f;
+        }
+        walkResetHeld_ = xrState.a;
+
+        xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
+        xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
+
+        // While grip is held in anchored/depth mode, controls drive walkthrough navigation.
+        inputState.left = false;
+        inputState.right = false;
+        inputState.up = false;
+        inputState.down = false;
+        inputState.a = false;
+        inputState.l = false;
+        inputState.r = false;
+    }
+
     void applyPresentationConfig() {
         if (!xrRenderer_.initialized()) {
             return;
         }
-        xrRenderer_.setPresentationConfig(screenScale_, stereoConvergence_);
+        const bool depthEnabled = isDepthModeEnabled();
+        const bool worldAnchoredEnabled = isWorldAnchoredMode();
+        const float effectiveConvergence = worldAnchoredEnabled ? 0.0f : stereoConvergence_;
+        xrRenderer_.setPresentationConfig(screenScale_, effectiveConvergence);
+        xrRenderer_.setDepthMetadataEnabled(depthEnabled);
+        xrRenderer_.setWorldAnchoredEnabled(worldAnchoredEnabled);
+        xrRenderer_.setDepthRenderMode(depthRenderMode());
+        xrRenderer_.setDepthReconstructionConfig(depthReconstructionConfig_);
+        xrRenderer_.setOverlayVisible(showInfoWindow_);
+        xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
+        xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
+    }
+
+    void resetWalkthroughHome(const bool recenterAnchor) {
+        walkOffsetX_ = 0.0f;
+        walkOffsetY_ = 0.0f;
+        walkOffsetZ_ = 0.0f;
+        walkYaw_ = 0.0f;
+        walkPitch_ = 0.0f;
+        walkResetHeld_ = false;
+
+        if (xrRenderer_.initialized()) {
+            xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
+            xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
+            if (recenterAnchor && isWorldAnchoredMode()) {
+                xrRenderer_.resetWorldAnchor();
+            }
+        }
+        LOGI("Walkthrough home reset%s", recenterAnchor ? " + anchor recentered" : "");
     }
 
     std::string presentationSettingsPath() const {
@@ -723,6 +884,7 @@ private:
     void loadPresentationSettings() {
         screenScale_ = kDefaultScreenScale;
         stereoConvergence_ = kDefaultStereoConvergence;
+        viewMode_ = ViewMode::Classic;
 
         const std::string path = presentationSettingsPath();
         if (path.empty()) {
@@ -736,15 +898,28 @@ private:
 
         float loadedScale = screenScale_;
         float loadedConvergence = stereoConvergence_;
+        int loadedViewMode = static_cast<int>(viewMode_);
         in >> loadedScale >> loadedConvergence;
         if (!in.fail()) {
+            in >> loadedViewMode;
+            if (in.fail()) {
+                in.clear();
+            }
             screenScale_ = std::clamp(loadedScale, kMinScreenScale, kMaxScreenScale);
             stereoConvergence_ =
                 std::clamp(loadedConvergence, kMinStereoConvergence, kMaxStereoConvergence);
+            if (loadedViewMode <= 0) {
+                viewMode_ = ViewMode::Classic;
+            } else if (loadedViewMode == 2) {
+                viewMode_ = ViewMode::Anchored;
+            } else {
+                viewMode_ = ViewMode::DepthLayer;
+            }
             LOGI(
-                "Loaded presentation settings: scale=%.3f convergence=%.3f",
+                "Loaded presentation settings: scale=%.3f convergence=%.3f viewMode=%d",
                 screenScale_,
-                stereoConvergence_);
+                stereoConvergence_,
+                static_cast<int>(viewMode_));
         }
     }
 
@@ -761,7 +936,7 @@ private:
         }
 
         out << std::fixed << std::setprecision(4) << screenScale_ << " " << stereoConvergence_
-            << "\n";
+            << " " << static_cast<int>(viewMode_) << "\n";
     }
 
     void resetCalibrationEdgeState() {
@@ -773,6 +948,16 @@ private:
     }
 
     void applyCalibrationInput(VbInputState& inputState) {
+        if (showInfoWindow_) {
+            if (inputState.b && !depthToggleHeld_) {
+                toggleDepthViewMode();
+            }
+            depthToggleHeld_ = inputState.b;
+            inputState.b = false;
+        } else {
+            depthToggleHeld_ = false;
+        }
+
         if (!showInfoWindow_) {
             resetCalibrationEdgeState();
             return;
@@ -812,7 +997,6 @@ private:
             stereoConvergence_ = kDefaultStereoConvergence;
             changed = true;
         }
-
         adjustUpHeld_ = inputState.up;
         adjustDownHeld_ = inputState.down;
         adjustLeftHeld_ = inputState.left;
@@ -823,9 +1007,10 @@ private:
             applyPresentationConfig();
             savePresentationSettings();
             LOGI(
-                "Updated presentation settings: scale=%.3f convergence=%.3f",
+                "Updated presentation settings: scale=%.3f convergence=%.3f viewMode=%d",
                 screenScale_,
-                stereoConvergence_);
+                stereoConvergence_,
+                static_cast<int>(viewMode_));
         }
 
         // Consume calibration controls while both shoulders are held.
@@ -836,6 +1021,7 @@ private:
         inputState.a = false;
         inputState.l = false;
         inputState.r = false;
+        inputState.b = false;
     }
 
     void updateFps(const std::chrono::steady_clock::time_point now) {
@@ -874,7 +1060,61 @@ private:
         }
 
         lines.emplace_back("ROMS: L3 (HIDE INFO) / SELECT: X");
+        lines.emplace_back("INFO MENU: B CYCLE CLASSIC/ANCHORED/LAYER");
         lines.emplace_back("AUDIO: " + std::to_string(core_.audioSampleRate()) + " HZ");
+        lines.emplace_back(std::string("VIEW MODE: ") + viewModeName());
+        if (xrRenderer_.initialized()) {
+            const auto xrDebug = xrRenderer_.renderDebugState();
+            std::string renderPath = "NONE";
+            if (xrDebug.usedLayerRendering || xrDebug.usedDepthMesh) {
+                renderPath = "DEPTH-LAYERS";
+            } else if (xrDebug.usedDepthFallback) {
+                renderPath = "DEPTH-PLANE";
+            } else if (xrDebug.usedClassic) {
+                renderPath = "CLASSIC-PLANE";
+            }
+            lines.emplace_back(
+                std::string("XR: ") + (xrDebug.xrActive ? "RUNNING " : "IDLE ") + renderPath);
+            if (isWorldAnchoredMode()) {
+                std::ostringstream relText;
+                relText << std::fixed << std::setprecision(2) << xrDebug.relativeX << ","
+                        << xrDebug.relativeY << "," << xrDebug.relativeZ;
+                lines.emplace_back(
+                    std::string("ANCHOR: ") + (xrDebug.headOriginSet ? "SET " : "PENDING ") +
+                    "WALK " + relText.str());
+                lines.emplace_back("HOME RESET: PUSH L3 + R3");
+            }
+            if (isDepthModeEnabled()) {
+                lines.emplace_back(
+                    std::string("META: ") + (xrDebug.metadataAligned ? "ALIGNED " : "UNALIGNED ") +
+                    (xrDebug.depthMeshReady ? "READY" : "NO-DATA"));
+                if (xrDebug.depthMeshReady) {
+                    lines.emplace_back(
+                        "DEPTH GRID: " + std::to_string(xrDebug.meshColumns) + "x" +
+                        std::to_string(xrDebug.meshRows));
+                }
+                std::ostringstream depthParamText;
+                depthParamText << std::fixed << std::setprecision(1) << depthReconstructionConfig_.focalLengthPx;
+                lines.emplace_back("DEPTH F: " + depthParamText.str() + "PX  B: 0.064M");
+            }
+        }
+        if (isWorldAnchoredMode()) {
+            lines.emplace_back("6DOF: HOLD GRIP + L-STICK MOVE + R-STICK LOOK");
+            lines.emplace_back("UP/DOWN: HOLD GRIP + R/L TRIGGER  RESET: HOLD GRIP + A");
+            std::ostringstream walkText;
+            walkText << std::fixed << std::setprecision(2) << walkOffsetX_ << "," << walkOffsetY_
+                     << "," << walkOffsetZ_;
+            lines.emplace_back("WALK OFFSET: " + walkText.str());
+            std::ostringstream lookText;
+            lookText << std::fixed << std::setprecision(2) << walkYaw_ << "," << walkPitch_;
+            lines.emplace_back("WALK ROT(Y,P): " + lookText.str());
+        }
+        if (core_.hasMetadata()) {
+            lines.emplace_back(std::string("DEPTH META: ") + (isDepthModeEnabled() ? "ACTIVE #" : "READY #") +
+                               std::to_string(core_.metadataFrameId()));
+        } else {
+            lines.emplace_back("DEPTH META: OFF");
+        }
         {
             std::ostringstream scaleText;
             scaleText << std::fixed << std::setprecision(2) << screenScale_;
@@ -882,7 +1122,8 @@ private:
         }
         {
             std::ostringstream convergenceText;
-            convergenceText << std::fixed << std::setprecision(3) << stereoConvergence_;
+            convergenceText << std::fixed << std::setprecision(3)
+                            << (isWorldAnchoredMode() ? 0.0f : stereoConvergence_);
             lines.emplace_back("STEREO CONV: " + convergenceText.str());
         }
         lines.emplace_back("CALIB (HOLD L+R): U/D SIZE  L/R CONV  A RESET");
@@ -898,60 +1139,52 @@ private:
             0xFF000000);
 
         const bool canDrawMonoText = kStandbyFrameWidth > 40 && kStandbyFrameHeight > 40;
-        if (canDrawMonoText) {
-            DrawText(
-                standbyFrame_,
-                kStandbyFrameWidth,
-                kStandbyFrameHeight,
-                "NO ROM LOADED",
-                18,
-                18,
-                2,
-                0xFFFFFFFF);
-
-            if (showInfoWindow_) {
+        const bool sideBySideStandby = kStandbyFrameWidth >= (kStandbyFrameHeight * 2);
+        const int eyeWidth = sideBySideStandby ? (kStandbyFrameWidth / 2) : kStandbyFrameWidth;
+        auto drawStandbyText = [&](const char* text, const int x, const int y) {
+            if (sideBySideStandby) {
+                DrawText(
+                    standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, text, x, y, 2, 0xFFFFFFFF);
                 DrawText(
                     standbyFrame_,
                     kStandbyFrameWidth,
                     kStandbyFrameHeight,
-                    "R3: HIDE INFO",
-                    18,
-                    40,
+                    text,
+                    x + eyeWidth,
+                    y,
                     2,
                     0xFFFFFFFF);
             } else {
                 DrawText(
-                    standbyFrame_,
-                    kStandbyFrameWidth,
-                    kStandbyFrameHeight,
-                    "L3: OPEN ROM PICKER",
-                    18,
-                    40,
-                    2,
-                    0xFFFFFFFF);
-                DrawText(
-                    standbyFrame_,
-                    kStandbyFrameWidth,
-                    kStandbyFrameHeight,
-                    "R3: SHOW INFO",
-                    18,
-                    62,
-                    2,
-                    0xFFFFFFFF);
+                    standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, text, x, y, 2, 0xFFFFFFFF);
+            }
+        };
+
+        if (canDrawMonoText) {
+            drawStandbyText("NO ROM LOADED", 18, 18);
+
+            if (showInfoWindow_) {
+                drawStandbyText("R3: HIDE INFO", 18, 40);
+            } else {
+                drawStandbyText("L3: OPEN ROM PICKER", 18, 40);
+                drawStandbyText("R3: SHOW INFO", 18, 62);
             }
         }
 
         if (showInfoWindow_) {
             const std::vector<std::string> lines = buildInfoLines();
-            const int eyeWidth = kStandbyFrameWidth / 2;
-            DrawInfoPanel(standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, 0, eyeWidth, lines);
-            DrawInfoPanel(
-                standbyFrame_,
-                kStandbyFrameWidth,
-                kStandbyFrameHeight,
-                eyeWidth,
-                eyeWidth,
-                lines);
+            if (sideBySideStandby) {
+                DrawInfoPanel(standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, 0, eyeWidth, lines);
+                DrawInfoPanel(
+                    standbyFrame_,
+                    kStandbyFrameWidth,
+                    kStandbyFrameHeight,
+                    eyeWidth,
+                    eyeWidth,
+                    lines);
+            } else {
+                DrawInfoPanel(standbyFrame_, kStandbyFrameWidth, kStandbyFrameHeight, 0, eyeWidth, lines);
+            }
         }
 
         return standbyFrame_.data();
@@ -1106,6 +1339,7 @@ private:
     int lastKeyCode_ = -1;
     bool prevXrLeftThumbClick_ = false;
     bool prevXrRightThumbClick_ = false;
+    bool prevXrBothThumbClick_ = false;
     bool showInfoWindow_ = true;
     bool infoToggleHeld_ = false;
     std::vector<uint32_t> overlayFrame_;
@@ -1121,6 +1355,15 @@ private:
     bool adjustLeftHeld_ = false;
     bool adjustRightHeld_ = false;
     bool adjustResetHeld_ = false;
+    bool depthToggleHeld_ = false;
+    ViewMode viewMode_ = ViewMode::Classic;
+    bool walkResetHeld_ = false;
+    float walkOffsetX_ = 0.0f;
+    float walkOffsetY_ = 0.0f;
+    float walkOffsetZ_ = 0.0f;
+    float walkYaw_ = 0.0f;
+    float walkPitch_ = 0.0f;
+    DepthReconstructionConfig depthReconstructionConfig_{};
 
     bool dpadLeft_ = false;
     bool dpadRight_ = false;

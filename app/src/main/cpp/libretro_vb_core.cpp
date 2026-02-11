@@ -9,9 +9,13 @@
 
 extern "C" {
 #include "libretro.h"
+#include "mednafen/vb/vip.h"
 }
 
 namespace {
+constexpr int kVipEyeWidth = 384;
+constexpr int kVipEyeHeight = 224;
+
 
 // Libretro core entry points from beetle-vb.
 extern "C" {
@@ -247,7 +251,15 @@ void LibretroVbCore::unloadRom() {
     frameReady_ = false;
     frameWidth_ = 0;
     frameHeight_ = 0;
+    metadataReady_ = false;
+    metadataWidth_ = 0;
+    metadataHeight_ = 0;
+    metadataFrameId_ = 0;
     frameBuffer_.clear();
+    metadataDisparity_.clear();
+    metadataWorldIds_.clear();
+    metadataSourceX_.clear();
+    metadataSourceY_.clear();
     romData_.clear();
     std::scoped_lock lock(audioMutex_);
     audioQueue_.clear();
@@ -303,6 +315,112 @@ void LibretroVbCore::onVideoFrame(const void* data, unsigned width, unsigned hei
         auto* dstRow = frameBuffer_.data() + static_cast<size_t>(y) * width;
         const auto* srcRow = reinterpret_cast<const uint32_t*>(src + (y * pitch));
         std::memcpy(dstRow, srcRow, width * sizeof(uint32_t));
+    }
+
+    captureMetadata(width, height);
+}
+
+void LibretroVbCore::captureMetadata(const unsigned width, const unsigned height) {
+    const int8* leftDepth = nullptr;
+    const int8* rightDepth = nullptr;
+    const uint8* leftWorld = nullptr;
+    const uint8* rightWorld = nullptr;
+    const int16* leftSourceX = nullptr;
+    const int16* rightSourceX = nullptr;
+    const int16* leftSourceY = nullptr;
+    const int16* rightSourceY = nullptr;
+    uint32 frameCounter = 0;
+    uint32 mappingFrameCounter = 0;
+
+    if (!VIP_GetDepthMetadata(
+            &leftDepth,
+            &rightDepth,
+            &leftWorld,
+            &rightWorld,
+            &frameCounter) ||
+        !VIP_GetMappingMetadata(
+            &leftSourceX,
+            &rightSourceX,
+            &leftSourceY,
+            &rightSourceY,
+            &mappingFrameCounter) ||
+        leftDepth == nullptr || rightDepth == nullptr || leftWorld == nullptr || rightWorld == nullptr ||
+        leftSourceX == nullptr || rightSourceX == nullptr || leftSourceY == nullptr ||
+        rightSourceY == nullptr) {
+        metadataReady_ = false;
+        metadataWidth_ = 0;
+        metadataHeight_ = 0;
+        metadataDisparity_.clear();
+        metadataWorldIds_.clear();
+        metadataSourceX_.clear();
+        metadataSourceY_.clear();
+        return;
+    }
+
+    if (width < static_cast<unsigned>(kVipEyeWidth * 2) ||
+        height < static_cast<unsigned>(kVipEyeHeight)) {
+        metadataReady_ = false;
+        metadataWidth_ = 0;
+        metadataHeight_ = 0;
+        metadataDisparity_.clear();
+        metadataWorldIds_.clear();
+        metadataSourceX_.clear();
+        metadataSourceY_.clear();
+        return;
+    }
+
+    metadataWidth_ = kVipEyeWidth * 2;
+    metadataHeight_ = kVipEyeHeight;
+    metadataFrameId_ = frameCounter;
+    metadataReady_ = true;
+
+    const size_t metadataSize =
+        static_cast<size_t>(metadataWidth_) * static_cast<size_t>(metadataHeight_);
+    metadataDisparity_.assign(metadataSize, 0);
+    metadataWorldIds_.assign(metadataSize, 0xFF);
+    metadataSourceX_.assign(metadataSize, static_cast<int16_t>(-32768));
+    metadataSourceY_.assign(metadataSize, static_cast<int16_t>(-32768));
+
+    for (int y = 0; y < metadataHeight_; ++y) {
+        const size_t dstRow = static_cast<size_t>(y) * static_cast<size_t>(metadataWidth_);
+        const size_t srcRow = static_cast<size_t>(y) * static_cast<size_t>(kVipEyeWidth);
+
+        std::memcpy(
+            metadataDisparity_.data() + dstRow,
+            leftDepth + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int8));
+        std::memcpy(
+            metadataDisparity_.data() + dstRow + static_cast<size_t>(kVipEyeWidth),
+            rightDepth + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int8));
+        std::memcpy(
+            metadataWorldIds_.data() + dstRow,
+            leftWorld + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(uint8));
+        std::memcpy(
+            metadataWorldIds_.data() + dstRow + static_cast<size_t>(kVipEyeWidth),
+            rightWorld + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(uint8));
+        std::memcpy(
+            metadataSourceX_.data() + dstRow,
+            leftSourceX + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int16));
+        std::memcpy(
+            metadataSourceX_.data() + dstRow + static_cast<size_t>(kVipEyeWidth),
+            rightSourceX + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int16));
+        std::memcpy(
+            metadataSourceY_.data() + dstRow,
+            leftSourceY + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int16));
+        std::memcpy(
+            metadataSourceY_.data() + dstRow + static_cast<size_t>(kVipEyeWidth),
+            rightSourceY + srcRow,
+            static_cast<size_t>(kVipEyeWidth) * sizeof(int16));
+    }
+
+    if (mappingFrameCounter != frameCounter) {
+        metadataFrameId_ = frameCounter > mappingFrameCounter ? frameCounter : mappingFrameCounter;
     }
 }
 

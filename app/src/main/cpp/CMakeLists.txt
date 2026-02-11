@@ -30,6 +30,9 @@ add_library(
     audio_player.cpp
     renderer_gl.cpp
     xr_stereo_renderer.cpp
+    stereo_depth_reconstructor.cpp
+    vip_mapping_evaluator.cpp
+    world_mesh_builder.cpp
     libretro_vb_core.cpp
     "${BEETLE_VB_DIR}/libretro.cpp"
     "${BEETLE_VB_DIR}/mednafen/hw_cpu/v810/v810_cpu.cpp"

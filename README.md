@@ -24,6 +24,7 @@ Project links:
 - Real VB emulation core: Beetle VB (`mednafen`/libretro).
 - OpenXR stereo renderer for Quest (with GLES fallback).
 - Red palette rendering (`black & red`) + side-by-side stereo path.
+- Three view modes: `Classic` (head-locked), `Anchored` (world-fixed screen), and `Depth Layer` (layered hybrid depth + 6DOF walkthrough).
 - AAudio output.
 - ROM picker (SAF) with arbitrary filenames.
 - Runtime calibration (screen size / stereo convergence) with persistence.
@@ -53,6 +54,23 @@ git submodule update --init --recursive
 ./gradlew assembleDebug
 ./gradlew assembleRelease
 ```
+
+### ROM Reverse Engineering (V810 Disasm)
+Use `tools/vb_disasm.py` to inspect ROM code and find VIP writes (BG/OBJ related setup paths).
+
+Disassemble from reset vector:
+```bash
+python tools/vb_disasm.py disasm "D:\Users\keita\Downloads\VB\extracted\Virtual Boy Wario Land (Japan, USA)\Virtual Boy Wario Land (Japan, USA).vb" --count 800 --output logs/wl_reset_disasm.txt
+```
+
+Scan a ROM or folder for VIP write candidates:
+```bash
+python tools/vb_disasm.py scan-vip "D:\Users\keita\Downloads\VB\extracted" --focus obj-bg --limit 200 --output logs/vip_write_scan.txt
+```
+
+Tips:
+- If reset output looks mostly non-code, disassemble from a known function address with `--start 0x070xxxxx`.
+- `scan-vip` is a static heuristic pass, so verify suspicious results with runtime traces.
 
 ### Codex / Claude Setup Prompt
 You can paste the following prompt into Codex/Claude to bootstrap this repo quickly.
@@ -124,19 +142,33 @@ The app probes these fallback paths on startup:
 | `R3` | Toggle info window |
 | `L3` | Open ROM picker (only when info window is hidden) |
 
+Anchored / Depth Layer walkthrough:
+
+| Input | Effect |
+| --- | --- |
+| `B` (while info window visible) | Cycle `CLASSIC` -> `ANCHORED` -> `DEPTH LAYER` |
+| Hold any grip + left stick | Move (strafe/forward/back) |
+| Hold any grip + right stick | Look yaw / pitch |
+| Hold any grip + `R` / `L` trigger | Move up / down |
+| Hold any grip + `A` | Reset walkthrough transform |
+| `L3` + `R3` (together) | Reset walkthrough transform + recenter world anchor |
+
 Calibration (while info window is shown):
 
 | Input | Effect |
 | --- | --- |
 | Hold `L + R` | Enter calibration modifier |
 | `Up` / `Down` | Increase / decrease screen size |
-| `Left` / `Right` | Adjust stereo convergence |
+| `Left` / `Right` | Adjust stereo convergence (Classic mode only) |
 | `A` | Reset calibration to defaults |
 
 ### Project Layout
 - `app/src/main/java/.../MainActivity.kt`: Android activity + picker bridge.
 - `app/src/main/cpp/native_app.cpp`: native loop, lifecycle, input, overlay, calibration.
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR stereo renderer + XR input actions.
+- `app/src/main/cpp/stereo_depth_reconstructor.*`: disparity -> depth mesh reconstruction.
+- `app/src/main/cpp/vip_mapping_evaluator.*`: VIP depth/world sample evaluator.
+- `app/src/main/cpp/world_mesh_builder.*`: stereo world mesh build pipeline.
 - `app/src/main/cpp/libretro_vb_core.*`: libretro bridge (video/audio/input).
 - `third_party/beetle-vb-libretro/`: Beetle VB Git submodule (download on setup).
 
@@ -159,6 +191,7 @@ Android ネイティブ + OpenXR で実装しています。
 - Beetle VB（`mednafen` / libretro）コアを統合。
 - Quest 向け OpenXR ステレオ描画（GLES フォールバックあり）。
 - 赤色パレット（`black & red`）表示。
+- 3つの表示モード: `Classic`（ヘッド固定）、`Anchored`（ワールド固定スクリーン）、`Depth Layer`（レイヤーハイブリッド深度 + 6DOF移動）。
 - AAudio による音声出力。
 - SAF による ROM ピッカー（任意ファイル名対応）。
 - 画面サイズ / 立体収束（convergence）のランタイム調整と保存。
@@ -188,6 +221,23 @@ git submodule update --init --recursive
 ./gradlew assembleDebug
 ./gradlew assembleRelease
 ```
+
+### ROM 解析（V810逆アセンブル）
+`tools/vb_disasm.py` で ROM コード逆アセンブルと VIP 書き込み候補（BG/OBJ 系初期化）を確認できます。
+
+リセットベクタから逆アセンブル:
+```bash
+python tools/vb_disasm.py disasm "D:\Users\keita\Downloads\VB\extracted\Virtual Boy Wario Land (Japan, USA)\Virtual Boy Wario Land (Japan, USA).vb" --count 800 --output logs/wl_reset_disasm.txt
+```
+
+ROM 1本またはフォルダ全体の VIP 書き込み候補スキャン:
+```bash
+python tools/vb_disasm.py scan-vip "D:\Users\keita\Downloads\VB\extracted" --focus obj-bg --limit 200 --output logs/vip_write_scan.txt
+```
+
+補足:
+- `reset` 付近がコードに見えない場合は `--start 0x070xxxxx` で既知関数先頭から解析してください。
+- `scan-vip` は静的ヒューリスティックなので、怪しい箇所は実行時トレースで確認してください。
 
 ### Codex / Claude 用セットアッププロンプト
 以下を Codex / Claude に貼り付けると、セットアップとビルドを自動実行できます。
@@ -259,19 +309,33 @@ adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
 | `R3` | 情報ウィンドウ表示切替 |
 | `L3` | ROM ピッカー起動（情報ウィンドウ非表示時のみ） |
 
+Anchored / Depth Layer（6DOF移動）:
+
+| 入力 | 効果 |
+| --- | --- |
+| 情報ウィンドウ表示中 `B` | `CLASSIC` -> `ANCHORED` -> `DEPTH LAYER` の順で切替 |
+| いずれかのグリップを押しながら左スティック | 前後左右移動 |
+| いずれかのグリップを押しながら右スティック | 視点のYaw/Pitch |
+| いずれかのグリップを押しながら `R` / `L` | 上昇 / 下降 |
+| いずれかのグリップを押しながら `A` | 移動・回転をリセット |
+| `L3` + `R3` を同時押し | 移動・回転リセット + ワールドアンカー再センター |
+
 情報ウィンドウ表示中の調整:
 
 | 入力 | 効果 |
 | --- | --- |
 | `L + R` を押し続ける | 調整モード |
 | `Up` / `Down` | 画面サイズの増減 |
-| `Left` / `Right` | 立体収束量の調整 |
+| `Left` / `Right` | 立体収束量の調整（Classicモードのみ） |
 | `A` | 初期値へ戻す |
 
 ### ディレクトリ構成
 - `app/src/main/java/.../MainActivity.kt`: Activity と ROM ピッカー連携。
 - `app/src/main/cpp/native_app.cpp`: ネイティブループ、入力、HUD、調整処理。
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR 描画と XR 入力。
+- `app/src/main/cpp/stereo_depth_reconstructor.*`: 視差から深度メッシュを再構成。
+- `app/src/main/cpp/vip_mapping_evaluator.*`: VIP depth/world のサンプリング評価。
+- `app/src/main/cpp/world_mesh_builder.*`: ステレオWorldメッシュ構築。
 - `app/src/main/cpp/libretro_vb_core.*`: libretro ブリッジ。
 - `third_party/beetle-vb-libretro/`: Beetle VB の Git submodule（セットアップ時に取得）。
 

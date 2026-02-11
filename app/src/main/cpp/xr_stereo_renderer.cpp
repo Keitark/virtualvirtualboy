@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -23,22 +24,33 @@ namespace {
 #endif
 
 constexpr char kVertexShader[] =
-    "attribute vec2 aPos;\n"
+    "attribute vec3 aPos;\n"
     "attribute vec2 aUv;\n"
+    "uniform mat4 uMvp;\n"
     "varying vec2 vUv;\n"
     "void main() {\n"
     "  vUv = aUv;\n"
-    "  gl_Position = vec4(aPos, 0.0, 1.0);\n"
+    "  gl_Position = uMvp * vec4(aPos, 1.0);\n"
     "}\n";
 
 constexpr char kFragmentShader[] =
     "precision mediump float;\n"
     "uniform sampler2D uTex;\n"
+    "uniform sampler2D uWorldTex;\n"
     "uniform vec2 uUvScale;\n"
     "uniform vec2 uUvOffset;\n"
+    "uniform float uUseWorldMask;\n"
+    "uniform float uLayerWorld;\n"
     "varying vec2 vUv;\n"
     "void main() {\n"
     "  vec2 uv = vUv * uUvScale + uUvOffset;\n"
+    "  uv = clamp(uv, vec2(0.0), vec2(1.0));\n"
+    "  if (uUseWorldMask > 0.5) {\n"
+    "    float worldV = floor(texture2D(uWorldTex, uv).r * 255.0 + 0.5);\n"
+    "    if (abs(worldV - uLayerWorld) > 0.5) {\n"
+    "      discard;\n"
+    "    }\n"
+    "  }\n"
     "  vec4 c = texture2D(uTex, uv);\n"
     "  float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
     "  gl_FragColor = vec4(l, l * 0.08, l * 0.03, 1.0);\n"
@@ -48,6 +60,143 @@ constexpr float kMinScreenScale = 0.20f;
 constexpr float kMaxScreenScale = 1.00f;
 constexpr float kMinStereoConvergence = -0.08f;
 constexpr float kMaxStereoConvergence = 0.08f;
+constexpr int kVipEyeWidth = 384;
+constexpr int kVipEyeHeight = 224;
+constexpr float kLayerNearZ = 1.2f;
+constexpr float kLayerFarZ = 3.8f;
+constexpr float kDepthFallbackZ = 2.2f;
+constexpr float kClassicAnchoredZ = 2.2f;
+
+struct Mat4 {
+    float m[16] = {};
+};
+
+Mat4 Mat4Identity() {
+    Mat4 out{};
+    out.m[0] = 1.0f;
+    out.m[5] = 1.0f;
+    out.m[10] = 1.0f;
+    out.m[15] = 1.0f;
+    return out;
+}
+
+Mat4 Mat4Multiply(const Mat4& a, const Mat4& b) {
+    Mat4 out{};
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            out.m[(c * 4) + r] = a.m[(0 * 4) + r] * b.m[(c * 4) + 0] +
+                                 a.m[(1 * 4) + r] * b.m[(c * 4) + 1] +
+                                 a.m[(2 * 4) + r] * b.m[(c * 4) + 2] +
+                                 a.m[(3 * 4) + r] * b.m[(c * 4) + 3];
+        }
+    }
+    return out;
+}
+
+Mat4 Mat4Translation(const float x, const float y, const float z) {
+    Mat4 out = Mat4Identity();
+    out.m[12] = x;
+    out.m[13] = y;
+    out.m[14] = z;
+    return out;
+}
+
+Mat4 Mat4Scale(const float x, const float y, const float z) {
+    Mat4 out{};
+    out.m[0] = x;
+    out.m[5] = y;
+    out.m[10] = z;
+    out.m[15] = 1.0f;
+    return out;
+}
+
+Mat4 Mat4RotationX(const float radians) {
+    Mat4 out = Mat4Identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[5] = c;
+    out.m[6] = s;
+    out.m[9] = -s;
+    out.m[10] = c;
+    return out;
+}
+
+Mat4 Mat4RotationY(const float radians) {
+    Mat4 out = Mat4Identity();
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    out.m[0] = c;
+    out.m[2] = -s;
+    out.m[8] = s;
+    out.m[10] = c;
+    return out;
+}
+
+Mat4 Mat4PerspectiveFromFov(const XrFovf& fov, const float nearZ, const float farZ) {
+    const float tanLeft = std::tan(fov.angleLeft);
+    const float tanRight = std::tan(fov.angleRight);
+    const float tanDown = std::tan(fov.angleDown);
+    const float tanUp = std::tan(fov.angleUp);
+    const float tanWidth = tanRight - tanLeft;
+    const float tanHeight = tanUp - tanDown;
+
+    Mat4 out{};
+    out.m[0] = 2.0f / tanWidth;
+    out.m[5] = 2.0f / tanHeight;
+    out.m[8] = (tanRight + tanLeft) / tanWidth;
+    out.m[9] = (tanUp + tanDown) / tanHeight;
+    out.m[10] = -(farZ + nearZ) / (farZ - nearZ);
+    out.m[11] = -1.0f;
+    out.m[14] = -(2.0f * farZ * nearZ) / (farZ - nearZ);
+    return out;
+}
+
+Mat4 Mat4ViewFromPose(const XrPosef& pose) {
+    // OpenXR pose orientation is camera->world. View needs world->camera, so use conjugate.
+    const float x = -pose.orientation.x;
+    const float y = -pose.orientation.y;
+    const float z = -pose.orientation.z;
+    const float w = pose.orientation.w;
+    const float px = pose.position.x;
+    const float py = pose.position.y;
+    const float pz = pose.position.z;
+
+    const float xx = x * x;
+    const float yy = y * y;
+    const float zz = z * z;
+    const float xy = x * y;
+    const float xz = x * z;
+    const float yz = y * z;
+    const float wx = w * x;
+    const float wy = w * y;
+    const float wz = w * z;
+
+    // Row-major rotation terms for world->camera view matrix.
+    const float r00 = 1.0f - 2.0f * (yy + zz);
+    const float r01 = 2.0f * (xy - wz);
+    const float r02 = 2.0f * (xz + wy);
+    const float r10 = 2.0f * (xy + wz);
+    const float r11 = 1.0f - 2.0f * (xx + zz);
+    const float r12 = 2.0f * (yz - wx);
+    const float r20 = 2.0f * (xz - wy);
+    const float r21 = 2.0f * (yz + wx);
+    const float r22 = 1.0f - 2.0f * (xx + yy);
+
+    Mat4 out = Mat4Identity();
+    out.m[0] = r00;
+    out.m[1] = r10;
+    out.m[2] = r20;
+    out.m[4] = r01;
+    out.m[5] = r11;
+    out.m[6] = r21;
+    out.m[8] = r02;
+    out.m[9] = r12;
+    out.m[10] = r22;
+    out.m[12] = -(r00 * px + r01 * py + r02 * pz);
+    out.m[13] = -(r10 * px + r11 * py + r12 * pz);
+    out.m[14] = -(r20 * px + r21 * py + r22 * pz);
+    return out;
+}
 
 GLuint CompileShader(GLenum type, const char* source) {
     const GLuint shader = glCreateShader(type);
@@ -129,6 +278,42 @@ void XrStereoRenderer::setPresentationConfig(const float screenScale, const floa
     screenScale_ = std::clamp(screenScale, kMinScreenScale, kMaxScreenScale);
     stereoConvergence_ =
         std::clamp(stereoConvergence, kMinStereoConvergence, kMaxStereoConvergence);
+}
+
+void XrStereoRenderer::setDepthMetadataEnabled(const bool enabled) {
+    if (enabled && !depthMetadataEnabled_) {
+        // Re-capture world anchor at next frame when entering depth mode.
+        headOriginSet_ = false;
+    }
+    depthMetadataEnabled_ = enabled;
+}
+
+void XrStereoRenderer::setWorldAnchoredEnabled(const bool enabled) {
+    if (enabled && !worldAnchoredEnabled_) {
+        // Re-capture world anchor at next frame when entering anchored mode.
+        headOriginSet_ = false;
+    }
+    worldAnchoredEnabled_ = enabled;
+}
+
+void XrStereoRenderer::resetWorldAnchor() {
+    headOriginSet_ = false;
+}
+
+void XrStereoRenderer::setDepthReconstructionConfig(const DepthReconstructionConfig& config) {
+    depthReconstructor_.setConfig(config);
+    depthMeshReady_ = false;
+}
+
+void XrStereoRenderer::setWalkthroughOffset(const float x, const float y, const float z) {
+    walkThroughOffset_.x = std::clamp(x, -30.0f, 30.0f);
+    walkThroughOffset_.y = std::clamp(y, -30.0f, 30.0f);
+    walkThroughOffset_.z = std::clamp(z, -30.0f, 30.0f);
+}
+
+void XrStereoRenderer::setWalkthroughRotation(const float yaw, const float pitch) {
+    walkThroughYaw_ = yaw;
+    walkThroughPitch_ = std::clamp(pitch, -1.2f, 1.2f);
 }
 
 bool XrStereoRenderer::makeCurrent() {
@@ -652,8 +837,12 @@ bool XrStereoRenderer::createGlResources() {
     }
 
     uniformTexture_ = glGetUniformLocation(program_, "uTex");
+    uniformWorldTexture_ = glGetUniformLocation(program_, "uWorldTex");
     uniformUvScale_ = glGetUniformLocation(program_, "uUvScale");
     uniformUvOffset_ = glGetUniformLocation(program_, "uUvOffset");
+    uniformMvp_ = glGetUniformLocation(program_, "uMvp");
+    uniformUseWorldMask_ = glGetUniformLocation(program_, "uUseWorldMask");
+    uniformLayerWorld_ = glGetUniformLocation(program_, "uLayerWorld");
 
     glGenTextures(1, &emuTexture_);
     glBindTexture(GL_TEXTURE_2D, emuTexture_);
@@ -662,6 +851,21 @@ bool XrStereoRenderer::createGlResources() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    glGenTextures(1, &centerTexture_);
+    glBindTexture(GL_TEXTURE_2D, centerTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenTextures(1, &worldTexture_);
+    glBindTexture(GL_TEXTURE_2D, worldTexture_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenRenderbuffers(1, &depthRenderbuffer_);
     glGenFramebuffers(1, &framebuffer_);
     return true;
 }
@@ -740,6 +944,10 @@ void XrStereoRenderer::syncInput() {
     XrVector2f rightStick{};
     const bool leftActive = getVector2ActionState(moveAction_, leftStick, leftHandPath_);
     const bool rightActive = getVector2ActionState(moveAction_, rightStick, rightHandPath_);
+    controllerState_.leftStickX = leftActive ? leftStick.x : 0.0f;
+    controllerState_.leftStickY = leftActive ? leftStick.y : 0.0f;
+    controllerState_.rightStickX = rightActive ? rightStick.x : 0.0f;
+    controllerState_.rightStickY = rightActive ? rightStick.y : 0.0f;
     XrVector2f move = leftActive ? leftStick : rightStick;
     if (leftActive && rightActive) {
         if ((rightStick.x * rightStick.x + rightStick.y * rightStick.y) >
@@ -762,10 +970,10 @@ void XrStereoRenderer::syncInput() {
     const float leftSqueeze = getFloatActionState(leftSqueezeAction_, leftHandPath_);
     const float rightTrigger = getFloatActionState(rightTriggerAction_, rightHandPath_);
     const float rightSqueeze = getFloatActionState(rightSqueezeAction_, rightHandPath_);
-    const float leftPress = leftTrigger > leftSqueeze ? leftTrigger : leftSqueeze;
-    const float rightPress = rightTrigger > rightSqueeze ? rightTrigger : rightSqueeze;
-    controllerState_.l = leftPress > kTriggerPressThreshold;
-    controllerState_.r = rightPress > kTriggerPressThreshold;
+    controllerState_.leftGrip = leftSqueeze > kTriggerPressThreshold;
+    controllerState_.rightGrip = rightSqueeze > kTriggerPressThreshold;
+    controllerState_.l = leftTrigger > kTriggerPressThreshold;
+    controllerState_.r = rightTrigger > kTriggerPressThreshold;
 
     const bool leftThumbClick = getBooleanActionState(leftThumbClickAction_, leftHandPath_);
     const bool rightThumbClick = getBooleanActionState(rightThumbClickAction_, rightHandPath_);
@@ -844,6 +1052,19 @@ bool XrStereoRenderer::beginSession() {
     if (XR_FAILED(result)) {
         return setError("xrBeginSession", result);
     }
+    headOriginSet_ = false;
+    headOrigin_ = {};
+    walkThroughOffset_ = {};
+    walkThroughYaw_ = 0.0f;
+    walkThroughPitch_ = 0.0f;
+    layerDataReady_ = false;
+    depthMeshReady_ = false;
+    depthMeshes_[0] = {};
+    depthMeshes_[1] = {};
+    eyeLayers_[0].clear();
+    eyeLayers_[1].clear();
+    renderDebugState_ = {};
+    renderDebugState_.xrActive = true;
     sessionRunning_ = true;
     return true;
 }
@@ -854,6 +1075,7 @@ void XrStereoRenderer::endSession() {
     }
     xrEndSession(session_);
     sessionRunning_ = false;
+    renderDebugState_.xrActive = false;
 }
 
 void XrStereoRenderer::destroySwapchains() {
@@ -869,6 +1091,7 @@ void XrStereoRenderer::destroySwapchains() {
 
 bool XrStereoRenderer::initialize(ANativeActivity* activity) {
     shutdown();
+    depthReconstructor_.setConfig(depthReconstructor_.config());
     activity_ = activity;
     if (activity_ == nullptr) {
         return setErrorMessage("XrStereoRenderer requires ANativeActivity");
@@ -936,6 +1159,135 @@ void XrStereoRenderer::updateFrame(const uint32_t* pixels, int width, int height
     glBindTexture(GL_TEXTURE_2D, emuTexture_);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+    if (sideBySideFrame_) {
+        const int centerWidth = width / 2;
+        const int centerHeight = height;
+        centerFrameUpload_.resize(static_cast<size_t>(centerWidth) * static_cast<size_t>(centerHeight));
+        for (int y = 0; y < centerHeight; ++y) {
+            const size_t row = static_cast<size_t>(y) * static_cast<size_t>(width);
+            const size_t rowCenter = static_cast<size_t>(y) * static_cast<size_t>(centerWidth);
+            for (int x = 0; x < centerWidth; ++x) {
+                const uint32_t left = pixels[row + static_cast<size_t>(x)];
+                const uint32_t right = pixels[row + static_cast<size_t>(x + centerWidth)];
+                const uint32_t r = (((left >> 16) & 0xFFu) + ((right >> 16) & 0xFFu)) >> 1;
+                const uint32_t g = (((left >> 8) & 0xFFu) + ((right >> 8) & 0xFFu)) >> 1;
+                const uint32_t b = (((left)&0xFFu) + ((right)&0xFFu)) >> 1;
+                centerFrameUpload_[rowCenter + static_cast<size_t>(x)] =
+                    (0xFFu << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+
+        glBindTexture(GL_TEXTURE_2D, centerTexture_);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA,
+            centerWidth,
+            centerHeight,
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            centerFrameUpload_.data());
+    } else {
+        glBindTexture(GL_TEXTURE_2D, centerTexture_);
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    }
+}
+
+void XrStereoRenderer::updateDepthMetadata(
+    const int8_t* disparity,
+    const uint8_t* worldIds,
+    const int16_t* sourceX,
+    const int16_t* sourceY,
+    const int width,
+    const int height,
+    const uint32_t frameId) {
+    if (!initialized_ || disparity == nullptr || worldIds == nullptr || sourceX == nullptr ||
+        sourceY == nullptr || width <= 0 || height <= 0 || !makeCurrent()) {
+        metadataReady_ = false;
+        layerDataReady_ = false;
+        depthMeshReady_ = false;
+        metadataWidth_ = 0;
+        metadataHeight_ = 0;
+        disparityUpload_.clear();
+        depthMeshes_[0] = {};
+        depthMeshes_[1] = {};
+        eyeLayers_[0].clear();
+        eyeLayers_[1].clear();
+        return;
+    }
+
+    metadataWidth_ = width;
+    metadataHeight_ = height;
+    metadataFrameId_ = frameId;
+    metadataReady_ = true;
+    layerDataReady_ = width >= (kVipEyeWidth * 2) && height >= kVipEyeHeight;
+    depthMeshReady_ = false;
+
+    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    disparityUpload_.assign(disparity, disparity + pixelCount);
+    worldUpload_.assign(worldIds, worldIds + pixelCount);
+    glBindTexture(GL_TEXTURE_2D, worldTexture_);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_LUMINANCE,
+        width,
+        height,
+        0,
+        GL_LUMINANCE,
+        GL_UNSIGNED_BYTE,
+        worldUpload_.data());
+
+    eyeLayers_[0].clear();
+    eyeLayers_[1].clear();
+    depthMeshes_[0] = {};
+    depthMeshes_[1] = {};
+    if (!layerDataReady_) {
+        return;
+    }
+
+    if (mappingEvaluator_.bind(sourceX, sourceY, width, height, kVipEyeWidth, kVipEyeHeight)) {
+        depthMeshReady_ =
+            worldMeshBuilder_.buildStereoMeshes(mappingEvaluator_, depthReconstructor_, depthMeshes_);
+    }
+
+    for (int eye = 0; eye < 2; ++eye) {
+        std::array<int64_t, 32> disparitySum{};
+        std::array<int32_t, 32> disparityCount{};
+        for (int y = 0; y < kVipEyeHeight; ++y) {
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(width);
+            const size_t eyeOffset = static_cast<size_t>(eye * kVipEyeWidth);
+            for (int x = 0; x < kVipEyeWidth; ++x) {
+                const size_t index = rowOffset + eyeOffset + static_cast<size_t>(x);
+                const uint8_t worldId = worldIds[index];
+                if (worldId >= 32) {
+                    continue;
+                }
+                const int depthAbs = std::abs(static_cast<int>(disparity[index]));
+                disparitySum[worldId] += depthAbs;
+                disparityCount[worldId]++;
+            }
+        }
+
+        auto& layers = eyeLayers_[eye];
+        for (uint8_t worldId = 0; worldId < 32; ++worldId) {
+            if (disparityCount[worldId] <= 0) {
+                continue;
+            }
+            const float avgDisp =
+                static_cast<float>(disparitySum[worldId]) / static_cast<float>(disparityCount[worldId]);
+            const float closeness = std::clamp(avgDisp / 127.0f, 0.0f, 1.0f);
+            const float z = kLayerFarZ - closeness * (kLayerFarZ - kLayerNearZ);
+            layers.push_back({worldId, z});
+        }
+
+        std::sort(layers.begin(), layers.end(), [](const LayerInfo& a, const LayerInfo& b) {
+            return a.z > b.z;  // far-to-near painter order
+        });
+    }
 }
 
 bool XrStereoRenderer::renderFrame() {
@@ -945,8 +1297,26 @@ bool XrStereoRenderer::renderFrame() {
 
     pollEvents();
     if (!sessionRunning_) {
+        renderDebugState_.xrActive = false;
         return false;
     }
+    renderDebugState_.xrActive = true;
+    renderDebugState_.depthModeEnabled = depthMetadataEnabled_;
+    renderDebugState_.overlayVisible = overlayVisible_;
+    renderDebugState_.headOriginSet = headOriginSet_;
+    renderDebugState_.usedDepthMesh = false;
+    renderDebugState_.usedLayerRendering = false;
+    renderDebugState_.usedDepthFallback = false;
+    renderDebugState_.usedClassic = false;
+    renderDebugState_.frameShouldRender = false;
+    renderDebugState_.metadataAligned = false;
+    renderDebugState_.layerDataReady = layerDataReady_;
+    renderDebugState_.depthMeshReady = depthMeshReady_;
+    renderDebugState_.meshColumns = depthMeshes_[0].gridColumns;
+    renderDebugState_.meshRows = depthMeshes_[0].gridRows;
+    renderDebugState_.relativeX = 0.0f;
+    renderDebugState_.relativeY = 0.0f;
+    renderDebugState_.relativeZ = 0.0f;
 
     XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO};
     XrFrameState frameState{XR_TYPE_FRAME_STATE};
@@ -965,6 +1335,7 @@ bool XrStereoRenderer::renderFrame() {
 
     std::vector<XrCompositionLayerProjectionView> projectionViews;
     XrCompositionLayerProjection projectionLayer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    renderDebugState_.frameShouldRender = frameState.shouldRender;
 
     if (frameState.shouldRender) {
         XrViewLocateInfo locateInfo{XR_TYPE_VIEW_LOCATE_INFO};
@@ -988,12 +1359,29 @@ bool XrStereoRenderer::renderFrame() {
             const float screenScale = std::clamp(screenScale_, kMinScreenScale, kMaxScreenScale);
             const float stereoConvergence =
                 std::clamp(stereoConvergence_, kMinStereoConvergence, kMaxStereoConvergence);
-            const GLfloat vertices[] = {
-                -screenScale, -screenScale, 0.0f, 1.0f,
-                screenScale,  -screenScale, 1.0f, 1.0f,
-                -screenScale, screenScale,  0.0f, 0.0f,
-                screenScale,  screenScale,  1.0f, 0.0f,
+            const GLfloat quadVertices[] = {
+                -1.0f, -1.0f, 0.0f, 0.0f, 1.0f,
+                1.0f,  -1.0f, 0.0f, 1.0f, 1.0f,
+                -1.0f, 1.0f,  0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f,  0.0f, 1.0f, 0.0f,
             };
+
+            if (!headOriginSet_) {
+                XrVector3f headCenter = views_[0].pose.position;
+                if (viewCount > 1) {
+                    headCenter.x = (views_[0].pose.position.x + views_[1].pose.position.x) * 0.5f;
+                    headCenter.y = (views_[0].pose.position.y + views_[1].pose.position.y) * 0.5f;
+                    headCenter.z = (views_[0].pose.position.z + views_[1].pose.position.z) * 0.5f;
+                }
+                headOrigin_ = headCenter;
+                headOriginSet_ = true;
+                renderDebugState_.headOriginSet = true;
+            }
+
+            const XrVector3f worldAnchor = headOrigin_;
+            renderDebugState_.relativeX = walkThroughOffset_.x;
+            renderDebugState_.relativeY = walkThroughOffset_.y;
+            renderDebugState_.relativeZ = walkThroughOffset_.z;
 
             for (uint32_t i = 0; i < viewCount && i < eyeSwapchains_.size(); ++i) {
                 auto& eye = eyeSwapchains_[i];
@@ -1023,38 +1411,189 @@ bool XrStereoRenderer::renderFrame() {
                         eye.images[imageIndex].image,
                         0);
 
+                    if (depthRenderbuffer_ != 0 &&
+                        (depthBufferWidth_ != eye.width || depthBufferHeight_ != eye.height)) {
+                        glBindRenderbuffer(GL_RENDERBUFFER, depthRenderbuffer_);
+                        glRenderbufferStorage(
+                            GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, eye.width, eye.height);
+                        depthBufferWidth_ = eye.width;
+                        depthBufferHeight_ = eye.height;
+                    }
+                    if (depthRenderbuffer_ != 0) {
+                        glFramebufferRenderbuffer(
+                            GL_FRAMEBUFFER,
+                            GL_DEPTH_ATTACHMENT,
+                            GL_RENDERBUFFER,
+                            depthRenderbuffer_);
+                    }
+
                     glViewport(0, 0, eye.width, eye.height);
                     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-                    glClear(GL_COLOR_BUFFER_BIT);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                     if (frameReady_) {
                         glUseProgram(program_);
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, emuTexture_);
-                        glUniform1i(uniformTexture_, 0);
+                        const bool metadataAligned =
+                            metadataReady_ && metadataWidth_ == frameWidth_ &&
+                            metadataHeight_ == frameHeight_;
+                        renderDebugState_.metadataAligned = metadataAligned;
+                        const bool useDepthMesh =
+                            depthMetadataEnabled_ && metadataAligned && depthMeshReady_ &&
+                            sideBySideFrame_ && !overlayVisible_ &&
+                            depthRenderMode_ == DepthRenderMode::Mesh &&
+                            i < depthMeshes_.size() && depthMeshes_[i].valid;
+                        const bool useLayerRendering =
+                            depthMetadataEnabled_ && metadataAligned && layerDataReady_ &&
+                            sideBySideFrame_ && !overlayVisible_ &&
+                            depthRenderMode_ == DepthRenderMode::Layer &&
+                            i < eyeLayers_.size() && !eyeLayers_[i].empty();
 
-                        if (sideBySideFrame_) {
-                            const float leftOffset = stereoConvergence;
-                            const float rightOffset = 0.5f - stereoConvergence;
-                            glUniform2f(uniformUvScale_, 0.5f, 1.0f);
-                            glUniform2f(uniformUvOffset_, i == 0 ? leftOffset : rightOffset, 0.0f);
-                        } else {
-                            glUniform2f(uniformUvScale_, 1.0f, 1.0f);
-                            glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
-                        }
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, useDepthMesh ? centerTexture_ : emuTexture_);
+                        glUniform1i(uniformTexture_, 0);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, worldTexture_);
+                        glUniform1i(uniformWorldTexture_, 1);
+                        glActiveTexture(GL_TEXTURE0);
 
                         glVertexAttribPointer(
-                            0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), vertices);
+                            0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), quadVertices);
                         glEnableVertexAttribArray(0);
                         glVertexAttribPointer(
                             1,
                             2,
                             GL_FLOAT,
                             GL_FALSE,
-                            4 * sizeof(GLfloat),
-                            reinterpret_cast<const void*>(vertices + 2));
+                            5 * sizeof(GLfloat),
+                            reinterpret_cast<const void*>(quadVertices + 3));
                         glEnableVertexAttribArray(1);
-                        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+                        const Mat4 projection =
+                            Mat4PerspectiveFromFov(views_[i].fov, 0.05f, 100.0f);
+                        const Mat4 view = Mat4ViewFromPose(views_[i].pose);
+                        const Mat4 walkRotation = Mat4Multiply(
+                            Mat4RotationY(-walkThroughYaw_), Mat4RotationX(-walkThroughPitch_));
+                        const Mat4 navigation = Mat4Multiply(
+                            Mat4Translation(worldAnchor.x, worldAnchor.y, worldAnchor.z),
+                            Mat4Multiply(
+                                walkRotation,
+                                Mat4Translation(
+                                    -walkThroughOffset_.x,
+                                    -walkThroughOffset_.y,
+                                    -walkThroughOffset_.z)));
+
+                        if (useDepthMesh) {
+                            if (i == 0) {
+                                renderDebugState_.usedDepthMesh = true;
+                            }
+                            glEnable(GL_DEPTH_TEST);
+                            glDepthMask(GL_TRUE);
+
+                            const Mat4 model = Mat4Multiply(navigation, Mat4Scale(screenScale, screenScale, 1.0f));
+                            const Mat4 mvp = Mat4Multiply(projection, Mat4Multiply(view, model));
+                            glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, mvp.m);
+                            glUniform2f(uniformUvScale_, 1.0f, 1.0f);
+                            glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
+                            glUniform1f(uniformUseWorldMask_, 0.0f);
+                            glUniform1f(uniformLayerWorld_, -1.0f);
+
+                            const auto& mesh = depthMeshes_[i];
+                            const float* vertexPtr = mesh.vertices.data();
+                            glVertexAttribPointer(
+                                0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), vertexPtr);
+                            glEnableVertexAttribArray(0);
+                            glVertexAttribPointer(
+                                1,
+                                2,
+                                GL_FLOAT,
+                                GL_FALSE,
+                                5 * sizeof(GLfloat),
+                                reinterpret_cast<const void*>(vertexPtr + 3));
+                            glEnableVertexAttribArray(1);
+                            glDrawElements(
+                                GL_TRIANGLES,
+                                static_cast<GLsizei>(mesh.indices.size()),
+                                GL_UNSIGNED_SHORT,
+                                mesh.indices.data());
+                            glDisable(GL_DEPTH_TEST);
+                        } else if (useLayerRendering) {
+                            if (i == 0) {
+                                renderDebugState_.usedLayerRendering = true;
+                            }
+                            glDisable(GL_DEPTH_TEST);
+                            glUniform2f(uniformUvScale_, 0.5f, 1.0f);
+                            glUniform2f(uniformUvOffset_, i == 0 ? 0.0f : 0.5f, 0.0f);
+                            glUniform1f(uniformUseWorldMask_, 1.0f);
+
+                            for (const auto& layer : eyeLayers_[i]) {
+                                const float halfSize = screenScale * layer.z;
+                                const Mat4 model = Mat4Multiply(
+                                    navigation,
+                                    Mat4Multiply(
+                                        Mat4Translation(0.0f, 0.0f, -layer.z),
+                                        Mat4Scale(halfSize, halfSize, 1.0f)));
+                                const Mat4 viewModel = Mat4Multiply(view, model);
+                                const Mat4 mvp = Mat4Multiply(projection, viewModel);
+                                glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, mvp.m);
+                                glUniform1f(uniformLayerWorld_, static_cast<float>(layer.worldId));
+                                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                            }
+                        } else if (depthMetadataEnabled_) {
+                            if (i == 0) {
+                                renderDebugState_.usedDepthFallback = true;
+                            }
+                            glDisable(GL_DEPTH_TEST);
+                            const float halfSize = screenScale * kDepthFallbackZ;
+                            const Mat4 model = Mat4Multiply(
+                                navigation,
+                                Mat4Multiply(
+                                    Mat4Translation(0.0f, 0.0f, -kDepthFallbackZ),
+                                    Mat4Scale(halfSize, halfSize, 1.0f)));
+                            const Mat4 mvp = Mat4Multiply(projection, Mat4Multiply(view, model));
+                            glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, mvp.m);
+                            glUniform1f(uniformUseWorldMask_, 0.0f);
+                            glUniform1f(uniformLayerWorld_, -1.0f);
+                            if (sideBySideFrame_) {
+                                glUniform2f(uniformUvScale_, 0.5f, 1.0f);
+                                glUniform2f(uniformUvOffset_, i == 0 ? 0.0f : 0.5f, 0.0f);
+                            } else {
+                                glUniform2f(uniformUvScale_, 1.0f, 1.0f);
+                                glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
+                            }
+                            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                        } else {
+                            if (i == 0) {
+                                renderDebugState_.usedClassic = true;
+                            }
+                            glDisable(GL_DEPTH_TEST);
+                            if (worldAnchoredEnabled_) {
+                                const float halfSize = screenScale * kClassicAnchoredZ;
+                                const Mat4 model = Mat4Multiply(
+                                    navigation,
+                                    Mat4Multiply(
+                                        Mat4Translation(0.0f, 0.0f, -kClassicAnchoredZ),
+                                        Mat4Scale(halfSize, halfSize, 1.0f)));
+                                const Mat4 mvp =
+                                    Mat4Multiply(projection, Mat4Multiply(view, model));
+                                glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, mvp.m);
+                            } else {
+                                const Mat4 modelScale = Mat4Scale(screenScale, screenScale, 1.0f);
+                                glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, modelScale.m);
+                            }
+                            glUniform1f(uniformUseWorldMask_, 0.0f);
+                            glUniform1f(uniformLayerWorld_, -1.0f);
+                            if (sideBySideFrame_) {
+                                const float leftOffset = stereoConvergence;
+                                const float rightOffset = 0.5f - stereoConvergence;
+                                glUniform2f(uniformUvScale_, 0.5f, 1.0f);
+                                glUniform2f(
+                                    uniformUvOffset_, i == 0 ? leftOffset : rightOffset, 0.0f);
+                            } else {
+                                glUniform2f(uniformUvScale_, 1.0f, 1.0f);
+                                glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
+                            }
+                            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                        }
                     }
 
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1114,6 +1653,18 @@ void XrStereoRenderer::shutdown() {
         glDeleteTextures(1, &emuTexture_);
         emuTexture_ = 0;
     }
+    if (centerTexture_ != 0) {
+        glDeleteTextures(1, &centerTexture_);
+        centerTexture_ = 0;
+    }
+    if (worldTexture_ != 0) {
+        glDeleteTextures(1, &worldTexture_);
+        worldTexture_ = 0;
+    }
+    if (depthRenderbuffer_ != 0) {
+        glDeleteRenderbuffers(1, &depthRenderbuffer_);
+        depthRenderbuffer_ = 0;
+    }
     if (program_ != 0) {
         glDeleteProgram(program_);
         program_ = 0;
@@ -1157,10 +1708,33 @@ void XrStereoRenderer::shutdown() {
     initialized_ = false;
     sessionRunning_ = false;
     frameReady_ = false;
+    metadataReady_ = false;
+    depthMetadataEnabled_ = false;
+    worldAnchoredEnabled_ = false;
     sideBySideFrame_ = false;
     exitRequested_ = false;
     frameWidth_ = 0;
     frameHeight_ = 0;
+    metadataWidth_ = 0;
+    metadataHeight_ = 0;
+    metadataFrameId_ = 0;
+    layerDataReady_ = false;
+    depthMeshReady_ = false;
+    depthBufferWidth_ = 0;
+    depthBufferHeight_ = 0;
+    headOriginSet_ = false;
+    headOrigin_ = {};
+    walkThroughOffset_ = {};
+    walkThroughYaw_ = 0.0f;
+    walkThroughPitch_ = 0.0f;
+    worldUpload_.clear();
+    disparityUpload_.clear();
+    centerFrameUpload_.clear();
+    depthMeshes_[0] = {};
+    depthMeshes_[1] = {};
+    eyeLayers_[0].clear();
+    eyeLayers_[1].clear();
+    renderDebugState_ = {};
     controllerState_ = ControllerState{};
 }
 
