@@ -1,4 +1,4 @@
-package com.keitark.virtualvirtualboy
+package com.keitark.vrboy
 
 import android.app.NativeActivity
 import android.content.Intent
@@ -97,7 +97,7 @@ class MainActivity : NativeActivity() {
             }
         }
 
-        const val TAG = "VirtualVirtualBoy"
+        const val TAG = "VRboy"
         const val REQUEST_CODE_PICK_ROM = 1001
     }
 }

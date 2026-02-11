@@ -1,19 +1,19 @@
-# virtualvirtualboy
+# VRboy
 
-[![Status](https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
-[![Release](https://img.shields.io/github/v/tag/Keitark/virtualvirtualboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge)](https://github.com/Keitark/VRboy/releases)
+[![Release](https://img.shields.io/github/v/tag/Keitark/VRboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/VRboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/Keitark/virtualvirtualboy?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/commits/main)
+[![Last Commit](https://img.shields.io/github/last-commit/Keitark/VRboy?style=for-the-badge)](https://github.com/Keitark/VRboy/commits/main)
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
 Current milestone: `v1.0.0`
 
 Project links:
-- Releases: <https://github.com/Keitark/virtualvirtualboy/releases>
-- Issues: <https://github.com/Keitark/virtualvirtualboy/issues>
+- Releases: <https://github.com/Keitark/VRboy/releases>
+- Issues: <https://github.com/Keitark/VRboy/issues>
 - Discussions/feedback: open an Issue with the `type: feature` label.
 
 ---
@@ -24,6 +24,7 @@ Project links:
 - Real VB emulation core: Beetle VB (`mednafen`/libretro).
 - OpenXR stereo renderer for Quest (with GLES fallback).
 - Red palette rendering (`black & red`) + side-by-side stereo path.
+- Two view modes: `Anchored` (default, world-fixed + 6DOF walkthrough) and `Classic` (head-locked).
 - AAudio output.
 - ROM picker (SAF) with arbitrary filenames.
 - Runtime calibration (screen size / stereo convergence) with persistence.
@@ -38,8 +39,8 @@ Project links:
 This repository uses a Git submodule for the Beetle VB core.
 
 ```bash
-git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
-cd virtualvirtualboy
+git clone --recurse-submodules https://github.com/Keitark/VRboy.git
+cd VRboy
 ```
 
 If you already cloned without submodules:
@@ -48,17 +49,36 @@ If you already cloned without submodules:
 git submodule update --init --recursive
 ```
 
+No local patching of `beetle-vb-libretro` is required for this build.
+
 ### Build Commands
 ```bash
 ./gradlew assembleDebug
 ./gradlew assembleRelease
 ```
 
+### ROM Reverse Engineering (V810 Disasm)
+Use `tools/vb_disasm.py` to inspect ROM code and find VIP writes (BG/OBJ related setup paths).
+
+Disassemble from reset vector:
+```bash
+python tools/vb_disasm.py disasm "D:\Users\keita\Downloads\VB\extracted\Virtual Boy Wario Land (Japan, USA)\Virtual Boy Wario Land (Japan, USA).vb" --count 800 --output logs/wl_reset_disasm.txt
+```
+
+Scan a ROM or folder for VIP write candidates:
+```bash
+python tools/vb_disasm.py scan-vip "D:\Users\keita\Downloads\VB\extracted" --focus obj-bg --limit 200 --output logs/vip_write_scan.txt
+```
+
+Tips:
+- If reset output looks mostly non-code, disassemble from a known function address with `--start 0x070xxxxx`.
+- `scan-vip` is a static heuristic pass, so verify suspicious results with runtime traces.
+
 ### Codex / Claude Setup Prompt
 You can paste the following prompt into Codex/Claude to bootstrap this repo quickly.
 
 ```text
-You are in the `virtualvirtualboy` repository.
+You are in the `VRboy` repository.
 Set up the Android build environment and produce a debug APK.
 
 Requirements:
@@ -72,26 +92,28 @@ Steps:
 2. Run `git submodule update --init --recursive`.
 3. Run `./gradlew clean assembleDebug`.
 4. Report build result and exact APK path.
-5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. Confirm debug APK exists under `app/build/outputs/apk/debug/`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
-   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+   - `adb install -r app/build/outputs/apk/debug/*-debug.apk`
+   - `adb shell am start -n com.keitark.vrboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK Output Naming
-APK files are now generated with explicit names:
-- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
-- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+APK files are generated here:
+- `app/build/outputs/apk/debug/*-debug.apk`
+- `app/build/outputs/apk/release/*-release.apk`
 
 Example (`v1.0.0`):
-- `virtualvirtualboy-1.0.0-debug.apk`
+- `*-1.0.0-debug.apk`
+
+Android package id: `com.keitark.vrboy`.
 
 ### Install / Run on Quest
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
-adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
+adb install -r app/build/outputs/apk/debug/*-debug.apk
+adb shell am start -n com.keitark.vrboy/.MainActivity
 ```
 
 ### How to Add ROMs
@@ -124,13 +146,24 @@ The app probes these fallback paths on startup:
 | `R3` | Toggle info window |
 | `L3` | Open ROM picker (only when info window is hidden) |
 
+Anchored walkthrough:
+
+| Input | Effect |
+| --- | --- |
+| `B` (while info window visible) | Toggle `CLASSIC` <-> `ANCHORED` |
+| Hold any grip + left stick | Move (strafe/forward/back) |
+| Hold any grip + right stick | Look yaw / pitch |
+| Hold any grip + `R` / `L` trigger | Move up / down |
+| Hold any grip + `A` | Reset walkthrough transform |
+| `L3` + `R3` (together) | Reset walkthrough transform + recenter world anchor |
+
 Calibration (while info window is shown):
 
 | Input | Effect |
 | --- | --- |
 | Hold `L + R` | Enter calibration modifier |
 | `Up` / `Down` | Increase / decrease screen size |
-| `Left` / `Right` | Adjust stereo convergence |
+| `Left` / `Right` | Adjust stereo convergence (Classic mode only) |
 | `A` | Reset calibration to defaults |
 
 ### Project Layout
@@ -150,7 +183,7 @@ Calibration (while info window is shown):
 ## 日本語
 
 ### 概要
-`virtualvirtualboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
+`VRboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
 Android ネイティブ + OpenXR で実装しています。
 
 現在のマイルストーン: `v1.0.0`
@@ -159,6 +192,7 @@ Android ネイティブ + OpenXR で実装しています。
 - Beetle VB（`mednafen` / libretro）コアを統合。
 - Quest 向け OpenXR ステレオ描画（GLES フォールバックあり）。
 - 赤色パレット（`black & red`）表示。
+- 2つの表示モード: `Anchored`（デフォルト/ワールド固定 + 6DOF移動）と `Classic`（ヘッド固定）。
 - AAudio による音声出力。
 - SAF による ROM ピッカー（任意ファイル名対応）。
 - 画面サイズ / 立体収束（convergence）のランタイム調整と保存。
@@ -173,8 +207,8 @@ Android ネイティブ + OpenXR で実装しています。
 このリポジトリでは Beetle VB コアを Git submodule として管理しています。
 
 ```bash
-git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
-cd virtualvirtualboy
+git clone --recurse-submodules https://github.com/Keitark/VRboy.git
+cd VRboy
 ```
 
 submodule なしで clone 済みの場合:
@@ -183,17 +217,36 @@ submodule なしで clone 済みの場合:
 git submodule update --init --recursive
 ```
 
+このビルドでは `beetle-vb-libretro` へのローカルパッチ適用は不要です。
+
 ### ビルドコマンド
 ```bash
 ./gradlew assembleDebug
 ./gradlew assembleRelease
 ```
 
+### ROM 解析（V810逆アセンブル）
+`tools/vb_disasm.py` で ROM コード逆アセンブルと VIP 書き込み候補（BG/OBJ 系初期化）を確認できます。
+
+リセットベクタから逆アセンブル:
+```bash
+python tools/vb_disasm.py disasm "D:\Users\keita\Downloads\VB\extracted\Virtual Boy Wario Land (Japan, USA)\Virtual Boy Wario Land (Japan, USA).vb" --count 800 --output logs/wl_reset_disasm.txt
+```
+
+ROM 1本またはフォルダ全体の VIP 書き込み候補スキャン:
+```bash
+python tools/vb_disasm.py scan-vip "D:\Users\keita\Downloads\VB\extracted" --focus obj-bg --limit 200 --output logs/vip_write_scan.txt
+```
+
+補足:
+- `reset` 付近がコードに見えない場合は `--start 0x070xxxxx` で既知関数先頭から解析してください。
+- `scan-vip` は静的ヒューリスティックなので、怪しい箇所は実行時トレースで確認してください。
+
 ### Codex / Claude 用セットアッププロンプト
 以下を Codex / Claude に貼り付けると、セットアップとビルドを自動実行できます。
 
 ```text
-You are in the `virtualvirtualboy` repository.
+You are in the `VRboy` repository.
 Set up the Android build environment and produce a debug APK.
 
 Requirements:
@@ -207,26 +260,28 @@ Steps:
 2. Run `git submodule update --init --recursive`.
 3. Run `./gradlew clean assembleDebug`.
 4. Report build result and exact APK path.
-5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. Confirm debug APK exists under `app/build/outputs/apk/debug/`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
-   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+   - `adb install -r app/build/outputs/apk/debug/*-debug.apk`
+   - `adb shell am start -n com.keitark.vrboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK 名称
-出力 APK 名を分かりやすくしています:
-- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
-- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+APK は次の場所に出力されます:
+- `app/build/outputs/apk/debug/*-debug.apk`
+- `app/build/outputs/apk/release/*-release.apk`
 
 例（`v1.0.0`）:
-- `virtualvirtualboy-1.0.0-debug.apk`
+- `*-1.0.0-debug.apk`
+
+Android package id: `com.keitark.vrboy`。
 
 ### Quest へのインストール
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
-adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
+adb install -r app/build/outputs/apk/debug/*-debug.apk
+adb shell am start -n com.keitark.vrboy/.MainActivity
 ```
 
 ### ROM の入れ方
@@ -259,13 +314,24 @@ adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
 | `R3` | 情報ウィンドウ表示切替 |
 | `L3` | ROM ピッカー起動（情報ウィンドウ非表示時のみ） |
 
+Anchored（6DOF移動）:
+
+| 入力 | 効果 |
+| --- | --- |
+| 情報ウィンドウ表示中 `B` | `CLASSIC` と `ANCHORED` を切替 |
+| いずれかのグリップを押しながら左スティック | 前後左右移動 |
+| いずれかのグリップを押しながら右スティック | 視点のYaw/Pitch |
+| いずれかのグリップを押しながら `R` / `L` | 上昇 / 下降 |
+| いずれかのグリップを押しながら `A` | 移動・回転をリセット |
+| `L3` + `R3` を同時押し | 移動・回転リセット + ワールドアンカー再センター |
+
 情報ウィンドウ表示中の調整:
 
 | 入力 | 効果 |
 | --- | --- |
 | `L + R` を押し続ける | 調整モード |
 | `Up` / `Down` | 画面サイズの増減 |
-| `Left` / `Right` | 立体収束量の調整 |
+| `Left` / `Right` | 立体収束量の調整（Classicモードのみ） |
 | `A` | 初期値へ戻す |
 
 ### ディレクトリ構成

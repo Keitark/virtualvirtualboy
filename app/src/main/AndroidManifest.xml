@@ -12,7 +12,7 @@
     <application
         android:allowBackup="false"
         android:hasCode="true"
-        android:label="VirtualVirtualBoy"
+        android:label="VRboy"
         android:supportsRtl="false"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
 

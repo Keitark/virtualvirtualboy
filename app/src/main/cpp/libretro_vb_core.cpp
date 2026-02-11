@@ -12,7 +12,6 @@ extern "C" {
 }
 
 namespace {
-
 // Libretro core entry points from beetle-vb.
 extern "C" {
 void retro_set_environment(retro_environment_t cb);
@@ -247,7 +246,15 @@ void LibretroVbCore::unloadRom() {
     frameReady_ = false;
     frameWidth_ = 0;
     frameHeight_ = 0;
+    metadataReady_ = false;
+    metadataWidth_ = 0;
+    metadataHeight_ = 0;
+    metadataFrameId_ = 0;
     frameBuffer_.clear();
+    metadataDisparity_.clear();
+    metadataWorldIds_.clear();
+    metadataSourceX_.clear();
+    metadataSourceY_.clear();
     romData_.clear();
     std::scoped_lock lock(audioMutex_);
     audioQueue_.clear();
@@ -304,6 +311,20 @@ void LibretroVbCore::onVideoFrame(const void* data, unsigned width, unsigned hei
         const auto* srcRow = reinterpret_cast<const uint32_t*>(src + (y * pitch));
         std::memcpy(dstRow, srcRow, width * sizeof(uint32_t));
     }
+    captureMetadata(width, height);
+}
+
+void LibretroVbCore::captureMetadata(const unsigned width, const unsigned height) {
+    (void)width;
+    (void)height;
+    metadataReady_ = false;
+    metadataWidth_ = 0;
+    metadataHeight_ = 0;
+    metadataFrameId_ = 0;
+    metadataDisparity_.clear();
+    metadataWorldIds_.clear();
+    metadataSourceX_.clear();
+    metadataSourceY_.clear();
 }
 
 void LibretroVbCore::onAudioBatch(const int16_t* interleavedSamples, const size_t frames) {
