@@ -300,11 +300,6 @@ void XrStereoRenderer::resetWorldAnchor() {
     headOriginSet_ = false;
 }
 
-void XrStereoRenderer::setDepthReconstructionConfig(const DepthReconstructionConfig& config) {
-    depthReconstructor_.setConfig(config);
-    depthMeshReady_ = false;
-}
-
 void XrStereoRenderer::setWalkthroughOffset(const float x, const float y, const float z) {
     walkThroughOffset_.x = std::clamp(x, -30.0f, 30.0f);
     walkThroughOffset_.y = std::clamp(y, -30.0f, 30.0f);
@@ -851,13 +846,6 @@ bool XrStereoRenderer::createGlResources() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glGenTextures(1, &centerTexture_);
-    glBindTexture(GL_TEXTURE_2D, centerTexture_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
     glGenTextures(1, &worldTexture_);
     glBindTexture(GL_TEXTURE_2D, worldTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -1058,9 +1046,6 @@ bool XrStereoRenderer::beginSession() {
     walkThroughYaw_ = 0.0f;
     walkThroughPitch_ = 0.0f;
     layerDataReady_ = false;
-    depthMeshReady_ = false;
-    depthMeshes_[0] = {};
-    depthMeshes_[1] = {};
     eyeLayers_[0].clear();
     eyeLayers_[1].clear();
     renderDebugState_ = {};
@@ -1091,7 +1076,6 @@ void XrStereoRenderer::destroySwapchains() {
 
 bool XrStereoRenderer::initialize(ANativeActivity* activity) {
     shutdown();
-    depthReconstructor_.setConfig(depthReconstructor_.config());
     activity_ = activity;
     if (activity_ == nullptr) {
         return setErrorMessage("XrStereoRenderer requires ANativeActivity");
@@ -1159,41 +1143,6 @@ void XrStereoRenderer::updateFrame(const uint32_t* pixels, int width, int height
     glBindTexture(GL_TEXTURE_2D, emuTexture_);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-
-    if (sideBySideFrame_) {
-        const int centerWidth = width / 2;
-        const int centerHeight = height;
-        centerFrameUpload_.resize(static_cast<size_t>(centerWidth) * static_cast<size_t>(centerHeight));
-        for (int y = 0; y < centerHeight; ++y) {
-            const size_t row = static_cast<size_t>(y) * static_cast<size_t>(width);
-            const size_t rowCenter = static_cast<size_t>(y) * static_cast<size_t>(centerWidth);
-            for (int x = 0; x < centerWidth; ++x) {
-                const uint32_t left = pixels[row + static_cast<size_t>(x)];
-                const uint32_t right = pixels[row + static_cast<size_t>(x + centerWidth)];
-                const uint32_t r = (((left >> 16) & 0xFFu) + ((right >> 16) & 0xFFu)) >> 1;
-                const uint32_t g = (((left >> 8) & 0xFFu) + ((right >> 8) & 0xFFu)) >> 1;
-                const uint32_t b = (((left)&0xFFu) + ((right)&0xFFu)) >> 1;
-                centerFrameUpload_[rowCenter + static_cast<size_t>(x)] =
-                    (0xFFu << 24) | (r << 16) | (g << 8) | b;
-            }
-        }
-
-        glBindTexture(GL_TEXTURE_2D, centerTexture_);
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_RGBA,
-            centerWidth,
-            centerHeight,
-            0,
-            GL_RGBA,
-            GL_UNSIGNED_BYTE,
-            centerFrameUpload_.data());
-    } else {
-        glBindTexture(GL_TEXTURE_2D, centerTexture_);
-        glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-    }
 }
 
 void XrStereoRenderer::updateDepthMetadata(
@@ -1204,16 +1153,15 @@ void XrStereoRenderer::updateDepthMetadata(
     const int width,
     const int height,
     const uint32_t frameId) {
-    if (!initialized_ || disparity == nullptr || worldIds == nullptr || sourceX == nullptr ||
-        sourceY == nullptr || width <= 0 || height <= 0 || !makeCurrent()) {
+    (void)sourceX;
+    (void)sourceY;
+    if (!initialized_ || disparity == nullptr || worldIds == nullptr || width <= 0 || height <= 0 ||
+        !makeCurrent()) {
         metadataReady_ = false;
         layerDataReady_ = false;
-        depthMeshReady_ = false;
         metadataWidth_ = 0;
         metadataHeight_ = 0;
         disparityUpload_.clear();
-        depthMeshes_[0] = {};
-        depthMeshes_[1] = {};
         eyeLayers_[0].clear();
         eyeLayers_[1].clear();
         return;
@@ -1224,7 +1172,6 @@ void XrStereoRenderer::updateDepthMetadata(
     metadataFrameId_ = frameId;
     metadataReady_ = true;
     layerDataReady_ = width >= (kVipEyeWidth * 2) && height >= kVipEyeHeight;
-    depthMeshReady_ = false;
 
     const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
     disparityUpload_.assign(disparity, disparity + pixelCount);
@@ -1243,15 +1190,8 @@ void XrStereoRenderer::updateDepthMetadata(
 
     eyeLayers_[0].clear();
     eyeLayers_[1].clear();
-    depthMeshes_[0] = {};
-    depthMeshes_[1] = {};
     if (!layerDataReady_) {
         return;
-    }
-
-    if (mappingEvaluator_.bind(sourceX, sourceY, width, height, kVipEyeWidth, kVipEyeHeight)) {
-        depthMeshReady_ =
-            worldMeshBuilder_.buildStereoMeshes(mappingEvaluator_, depthReconstructor_, depthMeshes_);
     }
 
     for (int eye = 0; eye < 2; ++eye) {
@@ -1304,16 +1244,12 @@ bool XrStereoRenderer::renderFrame() {
     renderDebugState_.depthModeEnabled = depthMetadataEnabled_;
     renderDebugState_.overlayVisible = overlayVisible_;
     renderDebugState_.headOriginSet = headOriginSet_;
-    renderDebugState_.usedDepthMesh = false;
     renderDebugState_.usedLayerRendering = false;
     renderDebugState_.usedDepthFallback = false;
     renderDebugState_.usedClassic = false;
     renderDebugState_.frameShouldRender = false;
     renderDebugState_.metadataAligned = false;
     renderDebugState_.layerDataReady = layerDataReady_;
-    renderDebugState_.depthMeshReady = depthMeshReady_;
-    renderDebugState_.meshColumns = depthMeshes_[0].gridColumns;
-    renderDebugState_.meshRows = depthMeshes_[0].gridRows;
     renderDebugState_.relativeX = 0.0f;
     renderDebugState_.relativeY = 0.0f;
     renderDebugState_.relativeZ = 0.0f;
@@ -1437,19 +1373,13 @@ bool XrStereoRenderer::renderFrame() {
                             metadataReady_ && metadataWidth_ == frameWidth_ &&
                             metadataHeight_ == frameHeight_;
                         renderDebugState_.metadataAligned = metadataAligned;
-                        const bool useDepthMesh =
-                            depthMetadataEnabled_ && metadataAligned && depthMeshReady_ &&
-                            sideBySideFrame_ && !overlayVisible_ &&
-                            depthRenderMode_ == DepthRenderMode::Mesh &&
-                            i < depthMeshes_.size() && depthMeshes_[i].valid;
                         const bool useLayerRendering =
                             depthMetadataEnabled_ && metadataAligned && layerDataReady_ &&
                             sideBySideFrame_ && !overlayVisible_ &&
-                            depthRenderMode_ == DepthRenderMode::Layer &&
                             i < eyeLayers_.size() && !eyeLayers_[i].empty();
 
                         glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, useDepthMesh ? centerTexture_ : emuTexture_);
+                        glBindTexture(GL_TEXTURE_2D, emuTexture_);
                         glUniform1i(uniformTexture_, 0);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, worldTexture_);
@@ -1482,41 +1412,7 @@ bool XrStereoRenderer::renderFrame() {
                                     -walkThroughOffset_.y,
                                     -walkThroughOffset_.z)));
 
-                        if (useDepthMesh) {
-                            if (i == 0) {
-                                renderDebugState_.usedDepthMesh = true;
-                            }
-                            glEnable(GL_DEPTH_TEST);
-                            glDepthMask(GL_TRUE);
-
-                            const Mat4 model = Mat4Multiply(navigation, Mat4Scale(screenScale, screenScale, 1.0f));
-                            const Mat4 mvp = Mat4Multiply(projection, Mat4Multiply(view, model));
-                            glUniformMatrix4fv(uniformMvp_, 1, GL_FALSE, mvp.m);
-                            glUniform2f(uniformUvScale_, 1.0f, 1.0f);
-                            glUniform2f(uniformUvOffset_, 0.0f, 0.0f);
-                            glUniform1f(uniformUseWorldMask_, 0.0f);
-                            glUniform1f(uniformLayerWorld_, -1.0f);
-
-                            const auto& mesh = depthMeshes_[i];
-                            const float* vertexPtr = mesh.vertices.data();
-                            glVertexAttribPointer(
-                                0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), vertexPtr);
-                            glEnableVertexAttribArray(0);
-                            glVertexAttribPointer(
-                                1,
-                                2,
-                                GL_FLOAT,
-                                GL_FALSE,
-                                5 * sizeof(GLfloat),
-                                reinterpret_cast<const void*>(vertexPtr + 3));
-                            glEnableVertexAttribArray(1);
-                            glDrawElements(
-                                GL_TRIANGLES,
-                                static_cast<GLsizei>(mesh.indices.size()),
-                                GL_UNSIGNED_SHORT,
-                                mesh.indices.data());
-                            glDisable(GL_DEPTH_TEST);
-                        } else if (useLayerRendering) {
+                        if (useLayerRendering) {
                             if (i == 0) {
                                 renderDebugState_.usedLayerRendering = true;
                             }
@@ -1653,10 +1549,6 @@ void XrStereoRenderer::shutdown() {
         glDeleteTextures(1, &emuTexture_);
         emuTexture_ = 0;
     }
-    if (centerTexture_ != 0) {
-        glDeleteTextures(1, &centerTexture_);
-        centerTexture_ = 0;
-    }
     if (worldTexture_ != 0) {
         glDeleteTextures(1, &worldTexture_);
         worldTexture_ = 0;
@@ -1719,7 +1611,6 @@ void XrStereoRenderer::shutdown() {
     metadataHeight_ = 0;
     metadataFrameId_ = 0;
     layerDataReady_ = false;
-    depthMeshReady_ = false;
     depthBufferWidth_ = 0;
     depthBufferHeight_ = 0;
     headOriginSet_ = false;
@@ -1729,9 +1620,6 @@ void XrStereoRenderer::shutdown() {
     walkThroughPitch_ = 0.0f;
     worldUpload_.clear();
     disparityUpload_.clear();
-    centerFrameUpload_.clear();
-    depthMeshes_[0] = {};
-    depthMeshes_[1] = {};
     eyeLayers_[0].clear();
     eyeLayers_[1].clear();
     renderDebugState_ = {};

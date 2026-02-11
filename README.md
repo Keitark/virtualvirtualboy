@@ -1,19 +1,19 @@
-# virtualvirtualboy
+# VRboy
 
-[![Status](https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
-[![Release](https://img.shields.io/github/v/tag/Keitark/virtualvirtualboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/releases)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge)](https://github.com/Keitark/VRboy/releases)
+[![Release](https://img.shields.io/github/v/tag/Keitark/VRboy?sort=semver&style=for-the-badge)](https://github.com/Keitark/VRboy/releases)
 [![Platform](https://img.shields.io/badge/platform-Android%20(Quest)-3DDC84?style=for-the-badge)](https://developer.android.com/)
 [![OpenXR](https://img.shields.io/badge/OpenXR-1.1-0066B8?style=for-the-badge)](https://www.khronos.org/openxr/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/Keitark/virtualvirtualboy?style=for-the-badge)](https://github.com/Keitark/virtualvirtualboy/commits/main)
+[![Last Commit](https://img.shields.io/github/last-commit/Keitark/VRboy?style=for-the-badge)](https://github.com/Keitark/VRboy/commits/main)
 
 Virtual Boy emulator for Meta Quest (Quest 2+), implemented as a native Android + OpenXR app.
 
 Current milestone: `v1.0.0`
 
 Project links:
-- Releases: <https://github.com/Keitark/virtualvirtualboy/releases>
-- Issues: <https://github.com/Keitark/virtualvirtualboy/issues>
+- Releases: <https://github.com/Keitark/VRboy/releases>
+- Issues: <https://github.com/Keitark/VRboy/issues>
 - Discussions/feedback: open an Issue with the `type: feature` label.
 
 ---
@@ -24,7 +24,7 @@ Project links:
 - Real VB emulation core: Beetle VB (`mednafen`/libretro).
 - OpenXR stereo renderer for Quest (with GLES fallback).
 - Red palette rendering (`black & red`) + side-by-side stereo path.
-- Three view modes: `Classic` (head-locked), `Anchored` (world-fixed screen), and `Depth Layer` (layered hybrid depth + 6DOF walkthrough).
+- Three view modes: `Anchored` (default, world-fixed), `Classic` (head-locked), and `Depth Layer` (fallback depth presentation + 6DOF walkthrough).
 - AAudio output.
 - ROM picker (SAF) with arbitrary filenames.
 - Runtime calibration (screen size / stereo convergence) with persistence.
@@ -39,8 +39,8 @@ Project links:
 This repository uses a Git submodule for the Beetle VB core.
 
 ```bash
-git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
-cd virtualvirtualboy
+git clone --recurse-submodules https://github.com/Keitark/VRboy.git
+cd VRboy
 ```
 
 If you already cloned without submodules:
@@ -48,6 +48,8 @@ If you already cloned without submodules:
 ```bash
 git submodule update --init --recursive
 ```
+
+No local patching of `beetle-vb-libretro` is required for this build.
 
 ### Build Commands
 ```bash
@@ -76,7 +78,7 @@ Tips:
 You can paste the following prompt into Codex/Claude to bootstrap this repo quickly.
 
 ```text
-You are in the `virtualvirtualboy` repository.
+You are in the `VRboy` repository.
 Set up the Android build environment and produce a debug APK.
 
 Requirements:
@@ -166,9 +168,6 @@ Calibration (while info window is shown):
 - `app/src/main/java/.../MainActivity.kt`: Android activity + picker bridge.
 - `app/src/main/cpp/native_app.cpp`: native loop, lifecycle, input, overlay, calibration.
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR stereo renderer + XR input actions.
-- `app/src/main/cpp/stereo_depth_reconstructor.*`: disparity -> depth mesh reconstruction.
-- `app/src/main/cpp/vip_mapping_evaluator.*`: VIP depth/world sample evaluator.
-- `app/src/main/cpp/world_mesh_builder.*`: stereo world mesh build pipeline.
 - `app/src/main/cpp/libretro_vb_core.*`: libretro bridge (video/audio/input).
 - `third_party/beetle-vb-libretro/`: Beetle VB Git submodule (download on setup).
 
@@ -182,7 +181,7 @@ Calibration (while info window is shown):
 ## 日本語
 
 ### 概要
-`virtualvirtualboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
+`VRboy` は Meta Quest（Quest 2 以降）向けの Virtual Boy エミュレータです。  
 Android ネイティブ + OpenXR で実装しています。
 
 現在のマイルストーン: `v1.0.0`
@@ -191,7 +190,7 @@ Android ネイティブ + OpenXR で実装しています。
 - Beetle VB（`mednafen` / libretro）コアを統合。
 - Quest 向け OpenXR ステレオ描画（GLES フォールバックあり）。
 - 赤色パレット（`black & red`）表示。
-- 3つの表示モード: `Classic`（ヘッド固定）、`Anchored`（ワールド固定スクリーン）、`Depth Layer`（レイヤーハイブリッド深度 + 6DOF移動）。
+- 3つの表示モード: `Anchored`（デフォルト/ワールド固定）、`Classic`（ヘッド固定）、`Depth Layer`（フォールバック深度表示 + 6DOF移動）。
 - AAudio による音声出力。
 - SAF による ROM ピッカー（任意ファイル名対応）。
 - 画面サイズ / 立体収束（convergence）のランタイム調整と保存。
@@ -206,8 +205,8 @@ Android ネイティブ + OpenXR で実装しています。
 このリポジトリでは Beetle VB コアを Git submodule として管理しています。
 
 ```bash
-git clone --recurse-submodules https://github.com/Keitark/virtualvirtualboy.git
-cd virtualvirtualboy
+git clone --recurse-submodules https://github.com/Keitark/VRboy.git
+cd VRboy
 ```
 
 submodule なしで clone 済みの場合:
@@ -215,6 +214,8 @@ submodule なしで clone 済みの場合:
 ```bash
 git submodule update --init --recursive
 ```
+
+このビルドでは `beetle-vb-libretro` へのローカルパッチ適用は不要です。
 
 ### ビルドコマンド
 ```bash
@@ -243,7 +244,7 @@ python tools/vb_disasm.py scan-vip "D:\Users\keita\Downloads\VB\extracted" --foc
 以下を Codex / Claude に貼り付けると、セットアップとビルドを自動実行できます。
 
 ```text
-You are in the `virtualvirtualboy` repository.
+You are in the `VRboy` repository.
 Set up the Android build environment and produce a debug APK.
 
 Requirements:
@@ -333,9 +334,6 @@ Anchored / Depth Layer（6DOF移動）:
 - `app/src/main/java/.../MainActivity.kt`: Activity と ROM ピッカー連携。
 - `app/src/main/cpp/native_app.cpp`: ネイティブループ、入力、HUD、調整処理。
 - `app/src/main/cpp/xr_stereo_renderer.*`: OpenXR 描画と XR 入力。
-- `app/src/main/cpp/stereo_depth_reconstructor.*`: 視差から深度メッシュを再構成。
-- `app/src/main/cpp/vip_mapping_evaluator.*`: VIP depth/world のサンプリング評価。
-- `app/src/main/cpp/world_mesh_builder.*`: ステレオWorldメッシュ構築。
 - `app/src/main/cpp/libretro_vb_core.*`: libretro ブリッジ。
 - `third_party/beetle-vb-libretro/`: Beetle VB の Git submodule（セットアップ時に取得）。
 

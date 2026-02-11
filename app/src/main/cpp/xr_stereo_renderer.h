@@ -18,17 +18,8 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
-#include "stereo_depth_reconstructor.h"
-#include "vip_mapping_evaluator.h"
-#include "world_mesh_builder.h"
-
 class XrStereoRenderer {
 public:
-    enum class DepthRenderMode : uint8_t {
-        Layer = 0,
-        Mesh = 1,
-    };
-
     struct ControllerState {
         bool left = false;
         bool right = false;
@@ -58,15 +49,11 @@ public:
         bool depthModeEnabled = false;
         bool metadataAligned = false;
         bool layerDataReady = false;
-        bool depthMeshReady = false;
         bool overlayVisible = false;
-        bool usedDepthMesh = false;
         bool usedLayerRendering = false;
         bool usedDepthFallback = false;
         bool usedClassic = false;
         bool headOriginSet = false;
-        int meshColumns = 0;
-        int meshRows = 0;
         float relativeX = 0.0f;
         float relativeY = 0.0f;
         float relativeZ = 0.0f;
@@ -91,8 +78,6 @@ public:
     void setDepthMetadataEnabled(bool enabled);
     void setWorldAnchoredEnabled(bool enabled);
     void resetWorldAnchor();
-    void setDepthRenderMode(DepthRenderMode mode) { depthRenderMode_ = mode; }
-    void setDepthReconstructionConfig(const DepthReconstructionConfig& config);
     void setOverlayVisible(bool visible) { overlayVisible_ = visible; }
     void setWalkthroughOffset(float x, float y, float z);
     void setWalkthroughRotation(float yaw, float pitch);
@@ -181,7 +166,6 @@ private:
 
     GLuint framebuffer_ = 0;
     GLuint emuTexture_ = 0;
-    GLuint centerTexture_ = 0;
     GLuint worldTexture_ = 0;
     GLuint depthRenderbuffer_ = 0;
     GLuint program_ = 0;
@@ -209,10 +193,8 @@ private:
     float stereoConvergence_ = 0.016f;
     bool depthMetadataEnabled_ = false;
     bool worldAnchoredEnabled_ = false;
-    DepthRenderMode depthRenderMode_ = DepthRenderMode::Layer;
     bool overlayVisible_ = false;
     bool layerDataReady_ = false;
-    bool depthMeshReady_ = false;
     int depthBufferWidth_ = 0;
     int depthBufferHeight_ = 0;
     bool headOriginSet_ = false;
@@ -221,13 +203,8 @@ private:
     float walkThroughYaw_ = 0.0f;
     float walkThroughPitch_ = 0.0f;
     ControllerState controllerState_{};
-    StereoDepthReconstructor depthReconstructor_{};
-    VipMappingEvaluator mappingEvaluator_{};
-    WorldMeshBuilder worldMeshBuilder_{};
     std::vector<uint8_t> worldUpload_;
     std::vector<int8_t> disparityUpload_;
-    std::vector<uint32_t> centerFrameUpload_;
-    std::array<DepthMeshData, 2> depthMeshes_;
     std::array<std::vector<LayerInfo>, 2> eyeLayers_;
     RenderDebugState renderDebugState_{};
 
