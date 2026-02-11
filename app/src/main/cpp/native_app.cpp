@@ -351,7 +351,7 @@ void DrawInfoPanel(
 
     const int lineHeight = (kGlyphHeight * kTextScale) + 1;
     const int padding = 6;
-    const int panelWidth = std::min(eyeWidth - 16, 340);
+    const int panelWidth = std::min(eyeWidth - 12, 360);
     const int panelHeight = (padding * 2) + (lineHeight * static_cast<int>(lines.size()));
     if (panelWidth <= 0 || panelHeight <= 0) {
         return;
@@ -381,7 +381,6 @@ class App {
 public:
     enum class ViewMode : int {
         Classic = 0,
-        DepthLayer = 1,  // Keep value for backward compatibility with saved settings.
         Anchored = 2,
     };
 
@@ -568,12 +567,7 @@ public:
             xrRenderer_.getControllerState(xrState);
             xrRenderer_.setOverlayVisible(showInfoWindow_);
         }
-        const bool bothThumbClick = xrState.leftThumbClick && xrState.rightThumbClick;
-        if (bothThumbClick && !prevXrBothThumbClick_) {
-            resetWalkthroughHome(true);
-        }
-
-        if (!bothThumbClick && xrState.rightThumbClick && !prevXrRightThumbClick_) {
+        if (xrState.rightThumbClick && !prevXrRightThumbClick_) {
             toggleInfoWindow();
         }
 
@@ -600,7 +594,7 @@ public:
             }
         }
 
-        if (!bothThumbClick && xrState.leftThumbClick && !prevXrLeftThumbClick_) {
+        if (xrState.leftThumbClick && !prevXrLeftThumbClick_) {
             requestRomPicker();
         }
 
@@ -652,16 +646,6 @@ public:
                 const uint32_t* renderPixels = composeRenderFrame(sourceFrame, width, height);
 
                 if (xrRenderer_.initialized()) {
-                    if (isDepthModeEnabled() && core_.hasMetadata()) {
-                        xrRenderer_.updateDepthMetadata(
-                            core_.metadataDisparity().data(),
-                            core_.metadataWorldIds().data(),
-                            core_.metadataSourceX().data(),
-                            core_.metadataSourceY().data(),
-                            core_.metadataWidth(),
-                            core_.metadataHeight(),
-                            core_.metadataFrameId());
-                    }
                     xrRenderer_.updateFrame(renderPixels, width, height);
                     const bool xrRendered = xrRenderer_.renderFrame();
                     if (!xrRendered && renderer_.initialized()) {
@@ -675,7 +659,6 @@ public:
             }
         }
 
-        prevXrBothThumbClick_ = bothThumbClick;
         prevXrLeftThumbClick_ = xrState.leftThumbClick;
         prevXrRightThumbClick_ = xrState.rightThumbClick;
         updateFps(std::chrono::steady_clock::now());
@@ -734,31 +717,16 @@ private:
                 return "CLASSIC";
             case ViewMode::Anchored:
                 return "ANCHORED";
-            case ViewMode::DepthLayer:
-                return "DEPTH LAYER";
             default:
                 return "CLASSIC";
         }
     }
 
-    bool isDepthModeEnabled() const { return viewMode_ == ViewMode::DepthLayer; }
-    bool isWorldAnchoredMode() const {
-        return viewMode_ == ViewMode::Anchored || viewMode_ == ViewMode::DepthLayer;
-    }
+    bool isDepthModeEnabled() const { return false; }
+    bool isWorldAnchoredMode() const { return viewMode_ == ViewMode::Anchored; }
 
     void toggleDepthViewMode() {
-        switch (viewMode_) {
-            case ViewMode::Classic:
-                viewMode_ = ViewMode::Anchored;
-                break;
-            case ViewMode::Anchored:
-                viewMode_ = ViewMode::DepthLayer;
-                break;
-            case ViewMode::DepthLayer:
-            default:
-                viewMode_ = ViewMode::Classic;
-                break;
-        }
+        viewMode_ = (viewMode_ == ViewMode::Classic) ? ViewMode::Anchored : ViewMode::Classic;
         applyPresentationConfig();
         savePresentationSettings();
         LOGI("View mode: %s", viewModeName());
@@ -805,18 +773,14 @@ private:
             walkOffsetZ_ + (deltaZ * kWalkOffsetStep), -kWalkOffsetLimit, kWalkOffsetLimit);
 
         if (xrState.a && !walkResetHeld_) {
-            walkOffsetX_ = 0.0f;
-            walkOffsetY_ = 0.0f;
-            walkOffsetZ_ = 0.0f;
-            walkYaw_ = 0.0f;
-            walkPitch_ = 0.0f;
+            resetWalkthroughHome();
         }
         walkResetHeld_ = xrState.a;
 
         xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
         xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
 
-        // While grip is held in anchored/depth mode, controls drive walkthrough navigation.
+        // While grip is held in anchored mode, controls drive walkthrough navigation.
         inputState.left = false;
         inputState.right = false;
         inputState.up = false;
@@ -830,7 +794,7 @@ private:
         if (!xrRenderer_.initialized()) {
             return;
         }
-        const bool depthEnabled = isDepthModeEnabled();
+        constexpr bool depthEnabled = false;
         const bool worldAnchoredEnabled = isWorldAnchoredMode();
         const float effectiveConvergence = worldAnchoredEnabled ? 0.0f : stereoConvergence_;
         xrRenderer_.setPresentationConfig(screenScale_, effectiveConvergence);
@@ -841,7 +805,7 @@ private:
         xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
     }
 
-    void resetWalkthroughHome(const bool recenterAnchor) {
+    void resetWalkthroughHome() {
         walkOffsetX_ = 0.0f;
         walkOffsetY_ = 0.0f;
         walkOffsetZ_ = 0.0f;
@@ -852,11 +816,8 @@ private:
         if (xrRenderer_.initialized()) {
             xrRenderer_.setWalkthroughOffset(walkOffsetX_, walkOffsetY_, walkOffsetZ_);
             xrRenderer_.setWalkthroughRotation(walkYaw_, walkPitch_);
-            if (recenterAnchor && isWorldAnchoredMode()) {
-                xrRenderer_.resetWorldAnchor();
-            }
         }
-        LOGI("Walkthrough home reset%s", recenterAnchor ? " + anchor recentered" : "");
+        LOGI("Walkthrough home reset");
     }
 
     std::string presentationSettingsPath() const {
@@ -902,13 +863,7 @@ private:
             screenScale_ = std::clamp(loadedScale, kMinScreenScale, kMaxScreenScale);
             stereoConvergence_ =
                 std::clamp(loadedConvergence, kMinStereoConvergence, kMaxStereoConvergence);
-            if (loadedViewMode <= 0) {
-                viewMode_ = ViewMode::Classic;
-            } else if (loadedViewMode == 2) {
-                viewMode_ = ViewMode::Anchored;
-            } else {
-                viewMode_ = ViewMode::DepthLayer;
-            }
+            viewMode_ = (loadedViewMode <= 0) ? ViewMode::Classic : ViewMode::Anchored;
             LOGI(
                 "Loaded presentation settings: scale=%.3f convergence=%.3f viewMode=%d",
                 screenScale_,
@@ -1052,45 +1007,35 @@ private:
             lines.emplace_back("ROM: NONE");
         }
 
-        lines.emplace_back(std::string("VIEW MODE: ") + viewModeName());
-        lines.emplace_back("ROMS: L3 OPEN (HIDE INFO) / X SELECT");
-        lines.emplace_back("INFO MENU: B CYCLE CLASSIC/ANCHORED/LAYER");
-        if (xrRenderer_.initialized()) {
-            const auto xrDebug = xrRenderer_.renderDebugState();
-            std::string renderPath = "NONE";
-            if (xrDebug.usedLayerRendering) {
-                renderPath = "DEPTH-LAYERS";
-            } else if (xrDebug.usedDepthFallback) {
-                renderPath = "DEPTH-PLANE";
-            } else if (xrDebug.usedClassic) {
-                renderPath = "CLASSIC-PLANE";
-            }
-            lines.emplace_back(
-                std::string("XR: ") + (xrDebug.xrActive ? "RUNNING " : "IDLE ") + renderPath);
-        }
+        lines.emplace_back("ROM PICKER: HIDE INFO + L3");
+        lines.emplace_back(std::string("VIEW: ") + viewModeName() + " (TOGGLE \"B\")");
+
         if (isWorldAnchoredMode()) {
-            lines.emplace_back("6DOF: HOLD GRIP + L-STICK MOVE + R-STICK LOOK");
-            lines.emplace_back("UP/DOWN: HOLD GRIP + R/L TRIGGER");
-            lines.emplace_back("RESET: HOLD GRIP + A, HOME: L3 + R3");
+            lines.emplace_back("NAV (HOLD ANY GRIP)");
+            lines.emplace_back("  L-STICK: MOVE");
+            lines.emplace_back("  R-STICK: LOOK");
+            lines.emplace_back("  L/R TRIGGER: UP/DOWN");
+            lines.emplace_back("  A: RESET VIEW");
         }
-        if (core_.hasMetadata()) {
-            lines.emplace_back(std::string("DEPTH META: ") + (isDepthModeEnabled() ? "ACTIVE #" : "READY #") +
-                               std::to_string(core_.metadataFrameId()));
-        } else {
-            lines.emplace_back("DEPTH META: OFF");
-        }
+
         {
             std::ostringstream scaleText;
             scaleText << std::fixed << std::setprecision(2) << screenScale_;
             lines.emplace_back("SCREEN SIZE: " + scaleText.str());
         }
-        {
+
+        if (!isWorldAnchoredMode()) {
             std::ostringstream convergenceText;
             convergenceText << std::fixed << std::setprecision(3)
-                            << (isWorldAnchoredMode() ? 0.0f : stereoConvergence_);
+                            << stereoConvergence_;
             lines.emplace_back("STEREO CONV: " + convergenceText.str());
+            lines.emplace_back("CALIB: HOLD L+R");
+            lines.emplace_back("U/D SIZE, L/R CONV, A RESET");
+        } else {
+            lines.emplace_back("CALIB: HOLD L+R");
+            lines.emplace_back("U/D SIZE, A RESET");
         }
-        lines.emplace_back("CALIB(HOLD L+R): U/D SIZE L/R CONV A RESET");
+
         return lines;
     }
 
@@ -1302,7 +1247,6 @@ private:
     int lastKeyCode_ = -1;
     bool prevXrLeftThumbClick_ = false;
     bool prevXrRightThumbClick_ = false;
-    bool prevXrBothThumbClick_ = false;
     bool showInfoWindow_ = true;
     bool infoToggleHeld_ = false;
     std::vector<uint32_t> overlayFrame_;
@@ -1360,7 +1304,7 @@ int32_t HandleInput(android_app* app, AInputEvent* event) {
 }  // namespace
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_keitark_virtualvirtualboy_MainActivity_nativeOnRomSelected(
+Java_com_keitark_vrboy_MainActivity_nativeOnRomSelected(
     JNIEnv* env, jobject /*thiz*/, jbyteArray data, jstring displayName) {
     if (data == nullptr) {
         return;
@@ -1390,7 +1334,7 @@ Java_com_keitark_virtualvirtualboy_MainActivity_nativeOnRomSelected(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_keitark_virtualvirtualboy_MainActivity_nativeOnRomPickerDismissed(
+Java_com_keitark_vrboy_MainActivity_nativeOnRomPickerDismissed(
     JNIEnv* /*env*/, jobject /*thiz*/) {
     std::scoped_lock lock(gPickerSignal.mutex);
     gPickerSignal.dismissed = true;

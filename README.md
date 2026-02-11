@@ -24,7 +24,7 @@ Project links:
 - Real VB emulation core: Beetle VB (`mednafen`/libretro).
 - OpenXR stereo renderer for Quest (with GLES fallback).
 - Red palette rendering (`black & red`) + side-by-side stereo path.
-- Three view modes: `Anchored` (default, world-fixed), `Classic` (head-locked), and `Depth Layer` (fallback depth presentation + 6DOF walkthrough).
+- Two view modes: `Anchored` (default, world-fixed + 6DOF walkthrough) and `Classic` (head-locked).
 - AAudio output.
 - ROM picker (SAF) with arbitrary filenames.
 - Runtime calibration (screen size / stereo convergence) with persistence.
@@ -92,26 +92,28 @@ Steps:
 2. Run `git submodule update --init --recursive`.
 3. Run `./gradlew clean assembleDebug`.
 4. Report build result and exact APK path.
-5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. Confirm debug APK exists under `app/build/outputs/apk/debug/`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
-   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+   - `adb install -r app/build/outputs/apk/debug/*-debug.apk`
+   - `adb shell am start -n com.keitark.vrboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK Output Naming
-APK files are now generated with explicit names:
-- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
-- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+APK files are generated here:
+- `app/build/outputs/apk/debug/*-debug.apk`
+- `app/build/outputs/apk/release/*-release.apk`
 
 Example (`v1.0.0`):
-- `virtualvirtualboy-1.0.0-debug.apk`
+- `*-1.0.0-debug.apk`
+
+Android package id: `com.keitark.vrboy`.
 
 ### Install / Run on Quest
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
-adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
+adb install -r app/build/outputs/apk/debug/*-debug.apk
+adb shell am start -n com.keitark.vrboy/.MainActivity
 ```
 
 ### How to Add ROMs
@@ -144,11 +146,11 @@ The app probes these fallback paths on startup:
 | `R3` | Toggle info window |
 | `L3` | Open ROM picker (only when info window is hidden) |
 
-Anchored / Depth Layer walkthrough:
+Anchored walkthrough:
 
 | Input | Effect |
 | --- | --- |
-| `B` (while info window visible) | Cycle `CLASSIC` -> `ANCHORED` -> `DEPTH LAYER` |
+| `B` (while info window visible) | Toggle `CLASSIC` <-> `ANCHORED` |
 | Hold any grip + left stick | Move (strafe/forward/back) |
 | Hold any grip + right stick | Look yaw / pitch |
 | Hold any grip + `R` / `L` trigger | Move up / down |
@@ -190,7 +192,7 @@ Android ネイティブ + OpenXR で実装しています。
 - Beetle VB（`mednafen` / libretro）コアを統合。
 - Quest 向け OpenXR ステレオ描画（GLES フォールバックあり）。
 - 赤色パレット（`black & red`）表示。
-- 3つの表示モード: `Anchored`（デフォルト/ワールド固定）、`Classic`（ヘッド固定）、`Depth Layer`（フォールバック深度表示 + 6DOF移動）。
+- 2つの表示モード: `Anchored`（デフォルト/ワールド固定 + 6DOF移動）と `Classic`（ヘッド固定）。
 - AAudio による音声出力。
 - SAF による ROM ピッカー（任意ファイル名対応）。
 - 画面サイズ / 立体収束（convergence）のランタイム調整と保存。
@@ -258,26 +260,28 @@ Steps:
 2. Run `git submodule update --init --recursive`.
 3. Run `./gradlew clean assembleDebug`.
 4. Report build result and exact APK path.
-5. Confirm APK filename format is `virtualvirtualboy-<version>-debug.apk`.
+5. Confirm debug APK exists under `app/build/outputs/apk/debug/`.
 6. If `adb` is available and Quest is connected, run:
-   - `adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk`
-   - `adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity`
+   - `adb install -r app/build/outputs/apk/debug/*-debug.apk`
+   - `adb shell am start -n com.keitark.vrboy/.MainActivity`
 7. If any step fails, show the error and propose the minimum fix.
 ```
 
 ### APK 名称
-出力 APK 名を分かりやすくしています:
-- `app/build/outputs/apk/debug/virtualvirtualboy-<version>-debug.apk`
-- `app/build/outputs/apk/release/virtualvirtualboy-<version>-release.apk`
+APK は次の場所に出力されます:
+- `app/build/outputs/apk/debug/*-debug.apk`
+- `app/build/outputs/apk/release/*-release.apk`
 
 例（`v1.0.0`）:
-- `virtualvirtualboy-1.0.0-debug.apk`
+- `*-1.0.0-debug.apk`
+
+Android package id: `com.keitark.vrboy`。
 
 ### Quest へのインストール
 ```bash
 adb devices
-adb install -r app/build/outputs/apk/debug/virtualvirtualboy-1.0.0-debug.apk
-adb shell am start -n com.keitark.virtualvirtualboy/.MainActivity
+adb install -r app/build/outputs/apk/debug/*-debug.apk
+adb shell am start -n com.keitark.vrboy/.MainActivity
 ```
 
 ### ROM の入れ方
@@ -310,11 +314,11 @@ adb push "Red Alarm (Japan).vb" /sdcard/Download/test.vb
 | `R3` | 情報ウィンドウ表示切替 |
 | `L3` | ROM ピッカー起動（情報ウィンドウ非表示時のみ） |
 
-Anchored / Depth Layer（6DOF移動）:
+Anchored（6DOF移動）:
 
 | 入力 | 効果 |
 | --- | --- |
-| 情報ウィンドウ表示中 `B` | `CLASSIC` -> `ANCHORED` -> `DEPTH LAYER` の順で切替 |
+| 情報ウィンドウ表示中 `B` | `CLASSIC` と `ANCHORED` を切替 |
 | いずれかのグリップを押しながら左スティック | 前後左右移動 |
 | いずれかのグリップを押しながら右スティック | 視点のYaw/Pitch |
 | いずれかのグリップを押しながら `R` / `L` | 上昇 / 下降 |

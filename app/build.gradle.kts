@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "com.keitark.virtualvirtualboy"
+    namespace = "com.keitark.vrboy"
     compileSdk = 35
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
-        applicationId = "com.keitark.virtualvirtualboy"
+        applicationId = "com.keitark.vrboy"
         minSdk = 29
         targetSdk = 35
         versionCode = 100
@@ -73,7 +73,7 @@ android.applicationVariants.all {
     outputs.all {
         @Suppress("UNCHECKED_CAST")
         val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-        output.outputFileName = "virtualvirtualboy-$version-$variantName.apk"
+        output.outputFileName = "vrboy-$version-$variantName.apk"
     }
 }
 
